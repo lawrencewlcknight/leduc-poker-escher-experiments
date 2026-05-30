@@ -1,6 +1,6 @@
 # Running the ESCHER experiments on Google Cloud Batch
 
-This guide explains how to run the ESCHER Kuhn poker experiments on Google
+This guide explains how to run the ESCHER Leduc poker experiments on Google
 Cloud using Google Batch. The workflow is designed to be repeatable and mostly
 command-line driven:
 
@@ -78,7 +78,7 @@ gcloud services enable \
 Create a regional bucket in the same region as the Batch jobs:
 
 ```bash
-export BUCKET_NAME="${PROJECT_ID}-kuhn-poker-escher-results"
+export BUCKET_NAME="${PROJECT_ID}-leduc-poker-escher-results"
 export BUCKET="gs://${BUCKET_NAME}"
 
 gcloud storage buckets create "$BUCKET" \
@@ -102,11 +102,11 @@ the bucket name, creation time, location, storage class, and storage URL.
 Create a dedicated service account:
 
 ```bash
-export SA_NAME="kuhn-escher-runner"
+export SA_NAME="leduc-escher-runner"
 export SA_EMAIL="${SA_NAME}@${PROJECT_ID}.iam.gserviceaccount.com"
 
 gcloud iam service-accounts create "$SA_NAME" \
-  --display-name="Kuhn poker ESCHER experiment runner" \
+  --display-name="Leduc poker ESCHER experiment runner" \
   --project="$PROJECT_ID"
 ```
 
@@ -163,8 +163,8 @@ Before submitting jobs from a new shell session, set:
 ```bash
 export PROJECT_ID="your-gcp-project-id"
 export REGION="europe-west1"
-export BUCKET="gs://${PROJECT_ID}-kuhn-poker-escher-results"
-export SA_EMAIL="kuhn-escher-runner@${PROJECT_ID}.iam.gserviceaccount.com"
+export BUCKET="gs://${PROJECT_ID}-leduc-poker-escher-results"
+export SA_EMAIL="leduc-escher-runner@${PROJECT_ID}.iam.gserviceaccount.com"
 
 gcloud config set project "$PROJECT_ID"
 ```
@@ -220,7 +220,7 @@ Before running a full experiment, submit a very small ESCHER baseline smoke test
 ```bash
 ./gcp/submit_batch_experiment.sh \
   "escher-smoke-exp1-$(date +%Y%m%d-%H%M%S)" \
-  "python -m experiments.kuhn_poker.escher_multiseed_baseline.run \
+  "python -m experiments.leduc_poker.escher_multiseed_baseline.run \
     --seeds 1234 \
     --iterations 2 \
     --traversals 5 \
@@ -240,7 +240,7 @@ The script prints the Batch script before submission. Check that the upload line
 uses `gsutil`, for example:
 
 ```bash
-gsutil -m cp -r outputs "gs://your-project-id-kuhn-poker-escher-results/escher-smoke-exp1-.../"
+gsutil -m cp -r outputs "gs://your-project-id-leduc-poker-escher-results/escher-smoke-exp1-.../"
 ```
 
 After submission, this command can be used to check whether the experiment job is
@@ -390,7 +390,7 @@ A safe starting configuration is `n2-standard-4`, 4 vCPUs, 16 GiB memory, and a
 ```bash
 ./gcp/submit_batch_experiment.sh \
   "escher-exp1-baseline-$(date +%Y%m%d-%H%M%S)" \
-  "python -m experiments.kuhn_poker.escher_multiseed_baseline.run \
+  "python -m experiments.leduc_poker.escher_multiseed_baseline.run \
     --output-root outputs/cloud/escher-exp1-baseline" \
   "n2-standard-4" \
   "43200" \
@@ -404,7 +404,7 @@ command with `/usr/bin/time -v`:
 ```bash
 ./gcp/submit_batch_experiment.sh \
   "escher-exp1-baseline-$(date +%Y%m%d-%H%M%S)" \
-  "/usr/bin/time -v python -m experiments.kuhn_poker.escher_multiseed_baseline.run \
+  "/usr/bin/time -v python -m experiments.leduc_poker.escher_multiseed_baseline.run \
     --output-root outputs/cloud/escher-exp1-baseline" \
   "n2-standard-4" \
   "43200" \
@@ -455,7 +455,7 @@ disk pressure is not relevant.
 ```bash
 ./gcp/submit_batch_experiment.sh \
   "escher-exp1-baseline-small-$(date +%Y%m%d-%H%M%S)" \
-  "python -m experiments.kuhn_poker.escher_multiseed_baseline.run \
+  "python -m experiments.leduc_poker.escher_multiseed_baseline.run \
     --output-root outputs/cloud/escher-exp1-baseline-small" \
   "n2-standard-2" \
   "43200" \
@@ -468,7 +468,7 @@ disk pressure is not relevant.
 ```bash
 ./gcp/submit_batch_experiment.sh \
   "escher-exp1-baseline-large-$(date +%Y%m%d-%H%M%S)" \
-  "python -m experiments.kuhn_poker.escher_multiseed_baseline.run \
+  "python -m experiments.leduc_poker.escher_multiseed_baseline.run \
     --output-root outputs/cloud/escher-exp1-baseline-large" \
   "n2-standard-8" \
   "43200" \
@@ -541,7 +541,7 @@ Template:
 ```bash
 ./gcp/submit_batch_experiment.sh \
   "JOB_PREFIX-$(date +%Y%m%d-%H%M%S)" \
-  "python -m experiments.kuhn_poker.EXPERIMENT_MODULE.run \
+  "python -m experiments.leduc_poker.EXPERIMENT_MODULE.run \
     --output-root outputs/cloud/JOB_PREFIX" \
   "n2-standard-4" \
   "43200" \
@@ -570,7 +570,7 @@ Example:
 ```bash
 ./gcp/submit_batch_experiment.sh \
   "escher-exp6-lr-schedule-$(date +%Y%m%d-%H%M%S)" \
-  "python -m experiments.kuhn_poker.escher_lr_schedule_ablation.run \
+  "python -m experiments.leduc_poker.escher_lr_schedule_ablation.run \
     --output-root outputs/cloud/escher-exp6-lr-schedule" \
   "n2-standard-4" \
   "43200" \
@@ -584,7 +584,7 @@ For initial cloud validation, reduce candidates and seeds first:
 ```bash
 ./gcp/submit_batch_experiment.sh \
   "escher-exp11-search-smoke-$(date +%Y%m%d-%H%M%S)" \
-  "python -m experiments.kuhn_poker.escher_solver_parameter_random_search.run \
+  "python -m experiments.leduc_poker.escher_solver_parameter_random_search.run \
     --screening-seeds 1234 \
     --confirmation-seeds 1234 \
     --screening-iterations 2 \
@@ -642,7 +642,7 @@ gcloud storage rm -r "$BUCKET/JOB_NAME/"
 ## 16. Notes on dependency installation
 
 The script deliberately creates a virtual environment under
-`/tmp/kuhn-escher-venv` rather than installing packages into the system Python.
+`/tmp/leduc-escher-venv` rather than installing packages into the system Python.
 This is important because installing experiment dependencies into the system
 Python can interfere with the Google Cloud CLI on the Batch VM.
 
@@ -652,8 +652,8 @@ The script uses:
 curl -LsSf https://astral.sh/uv/install.sh | sh
 export PATH="$HOME/.local/bin:$PATH"
 uv python install 3.9
-uv venv --python 3.9 --seed /tmp/kuhn-escher-venv
-source /tmp/kuhn-escher-venv/bin/activate
+uv venv --python 3.9 --seed /tmp/leduc-escher-venv
+source /tmp/leduc-escher-venv/bin/activate
 ```
 
 and deactivates the environment after the experiment command. Output copying is

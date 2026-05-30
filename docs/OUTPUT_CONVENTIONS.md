@@ -21,9 +21,9 @@ The ESCHER baseline currently produces:
 
 Future ablations should preserve these outputs where the metrics are meaningful.
 Average-policy-value plots should use the configured
-`average_policy_value_target` from the experiment config. For Kuhn poker this is
-player 0's Nash equilibrium value, `-1/18`, approximately `-0.0555`; Leduc or
-other games should override it in their baseline config.
+`average_policy_value_target` from the experiment config. For Leduc poker this is
+player 0's Nash equilibrium value, approximately `-0.085606424078`; other games
+should override it in their baseline config.
 
 For multi-arm ablations, use the same common filenames with a `variant_id` column:
 

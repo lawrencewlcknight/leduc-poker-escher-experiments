@@ -71,7 +71,7 @@ export TF_CPP_MIN_LOG_LEVEL=1
 EXPERIMENT_COMMAND={experiment_command_literal}
 
 WORKDIR=/workspace
-REPO_DIR="$WORKDIR/kuhn-poker-escher-experiments"
+REPO_DIR="$WORKDIR/leduc-poker-escher-experiments"
 JOB_OUTPUT_DIR="$REPO_DIR/outputs/cloud/{job_name}"
 RUN_LOG="$JOB_OUTPUT_DIR/batch_run.log"
 RESOURCE_LOG="$JOB_OUTPUT_DIR/resource_snapshots.log"
@@ -186,8 +186,8 @@ $SUDO apt-get install -y git curl ca-certificates python3 python3-pip python3-ve
 mkdir -p "$WORKDIR"
 cd "$WORKDIR"
 
-git clone --depth 1 https://github.com/lawrencewlcknight/kuhn-poker-escher-experiments.git
-cd kuhn-poker-escher-experiments
+git clone --depth 1 https://github.com/lawrencewlcknight/leduc-poker-escher-experiments.git
+cd leduc-poker-escher-experiments
 
 mkdir -p "$JOB_OUTPUT_DIR"
 cp "$BOOT_LOG" "$RUN_LOG" || true
@@ -215,8 +215,8 @@ lscpu | head -30 || true
 curl -LsSf https://astral.sh/uv/install.sh | sh
 export PATH="$HOME/.local/bin:$PATH"
 uv python install 3.9
-uv venv --python 3.9 --seed /tmp/kuhn-escher-venv
-source /tmp/kuhn-escher-venv/bin/activate
+uv venv --python 3.9 --seed /tmp/leduc-escher-venv
+source /tmp/leduc-escher-venv/bin/activate
 python --version
 
 python -m pip install --upgrade pip setuptools wheel

@@ -106,9 +106,9 @@ def test_downloaded_job_directory_is_searched_recursively(tmp_path):
         / "outputs"
         / "cloud"
         / "escher-exp1"
-        / "kuhn_poker_escher_multiseed_baseline_20260517_120000"
+        / "leduc_poker_escher_multiseed_baseline_20260517_120000"
     )
-    write_metadata(run_dir, experiment_name="kuhn_poker_escher_multiseed_baseline")
+    write_metadata(run_dir, experiment_name="leduc_poker_escher_multiseed_baseline")
     write_file(run_dir / "plot.png")
     write_file(run_dir / "seed_summary.csv")
     write_file(run_dir / "curves.npz")
@@ -128,8 +128,8 @@ def test_downloaded_job_directory_is_searched_recursively(tmp_path):
 
     destination_run = (
         dest
-        / "kuhn_poker_escher_multiseed_baseline"
-        / "kuhn_poker_escher_multiseed_baseline_20260517_120000"
+        / "leduc_poker_escher_multiseed_baseline"
+        / "leduc_poker_escher_multiseed_baseline_20260517_120000"
     )
     assert (destination_run / "plot.png").is_file()
     assert (destination_run / "seed_summary.csv").is_file()

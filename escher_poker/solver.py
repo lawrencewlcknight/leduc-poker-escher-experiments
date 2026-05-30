@@ -1,4 +1,4 @@
-"""ESCHER solver implementation used by the Kuhn poker experiments.
+"""ESCHER solver implementation used by the Leduc poker experiments.
 
 This file is intentionally close to the thesis notebook implementation so that
 results remain traceable to the original experimental development.

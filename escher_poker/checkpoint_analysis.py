@@ -11,7 +11,7 @@ from scipy import stats
 from open_spiel.python import policy
 from open_spiel.python.algorithms import exploitability, expected_game_score
 
-from .constants import KUHN_GAME_VALUE_PLAYER_0
+from .constants import LEDUC_GAME_VALUE_PLAYER_0
 from .policy_snapshots import LoadedESCHERPolicy
 
 
@@ -27,7 +27,7 @@ def policy_metrics(game, pol) -> Dict[str, float]:
         "nash_conv": float(nash_conv),
         "exploitability": float(nash_conv / 2.0),
         "policy_value": float(policy_value),
-        "policy_value_error": float(abs(policy_value - KUHN_GAME_VALUE_PLAYER_0)),
+        "policy_value_error": float(abs(policy_value - LEDUC_GAME_VALUE_PLAYER_0)),
     }
 
 

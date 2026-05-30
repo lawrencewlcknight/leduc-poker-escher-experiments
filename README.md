@@ -1,10 +1,10 @@
-# Kuhn Poker ESCHER Experiments
+# Leduc Poker ESCHER Experiments
 
-This repository contains reproducible experiments for evaluating ESCHER-style neural counterfactual regret minimisation on Kuhn poker using DeepMind's OpenSpiel library.
+This repository contains reproducible experiments for evaluating ESCHER-style neural counterfactual regret minimisation on Leduc poker using DeepMind's OpenSpiel library.
 
-The immediate aim is to establish a thesis-quality ESCHER baseline that is aligned with the sister Deep CFR repository. Kuhn poker is used as the diagnostic environment because it is a small two-player zero-sum imperfect-information game with a known game value and exact exploitability evaluation. The results from this repository are intended to sit alongside the Deep CFR Kuhn poker experiments in an MPhil thesis on neural CFR methods for poker.
+The immediate aim is to establish a thesis-quality ESCHER baseline that is aligned with the sister Deep CFR repository. Leduc poker is used as the diagnostic environment because it is a small two-player zero-sum imperfect-information game with a known game value and exact exploitability evaluation. The results from this repository are intended to sit alongside the Deep CFR Leduc poker experiments in an MPhil thesis on neural CFR methods for poker.
 
-The repository is organised so that each experiment can be run independently while sharing reusable ESCHER code. The shared `escher_poker` package contains the ESCHER solver, neural-network definitions, reservoir replay buffer, plotting helpers, seeding utilities, and experiment export utilities. Each experiment lives in its own package under `experiments/kuhn_poker/<experiment_name>/`.
+The repository is organised so that each experiment can be run independently while sharing reusable ESCHER code. The shared `escher_poker` package contains the ESCHER solver, neural-network definitions, reservoir replay buffer, plotting helpers, seeding utilities, and experiment export utilities. Each experiment lives in its own package under `experiments/leduc_poker/<experiment_name>/`.
 
 ## Repository structure
 
@@ -21,10 +21,10 @@ The repository is organised so that each experiment can be run independently whi
 │   ├── checkpoint_analysis.py                         # Exact checkpoint head-to-head analysis
 │   ├── checkpoint_plotting.py                         # Checkpoint-stability plots
 │   ├── hyperparameter_search.py                       # Search-stage runners and summaries
-│   ├── constants.py                                   # Kuhn value, thresholds, shuffle sizes
+│   ├── constants.py                                   # Leduc value, thresholds, shuffle sizes
 │   └── seeding.py                                     # TensorFlow/NumPy/Python seeding helpers
 ├── experiments/
-│   └── kuhn_poker/
+│   └── leduc_poker/
 │       ├── escher_multiseed_baseline/                 # Experiment 1
 │       │   ├── config.py
 │       │   ├── run.py
@@ -84,17 +84,17 @@ The repository is organised so that each experiment can be run independently whi
 
 ## Experiments
 
-### 1. Kuhn poker ESCHER multi-seed baseline
+### 1. Leduc poker ESCHER multi-seed baseline
 
-[`experiments/kuhn_poker/escher_multiseed_baseline/`](experiments/kuhn_poker/escher_multiseed_baseline/README.md)
+[`experiments/leduc_poker/escher_multiseed_baseline/`](experiments/leduc_poker/escher_multiseed_baseline/README.md)
 
-Runs the aligned ESCHER baseline on OpenSpiel `kuhn_poker` across the same ten random seeds used in the Deep CFR baseline experiments. The default solver specification is deliberately lightweight for Kuhn poker, using smaller 64-by-64 networks, fewer traversals, fewer supervised training steps, and less frequent intermediate exploitability checks than the original notebook-aligned configuration. The primary metric is exploitability, reported as NashConv divided by two. Secondary metrics include policy-value error from the known Kuhn game value, nodes touched, wall-clock time, and final/best/final-window exploitability. Diagnostic metrics include average-policy loss, regret-network losses, history-value-network train/test loss, and replay-buffer sizes.
+Runs the aligned ESCHER baseline on OpenSpiel `leduc_poker` across the same ten random seeds used in the Deep CFR baseline experiments. The default solver specification is deliberately lightweight for Leduc poker, using smaller 64-by-64 networks, fewer traversals, fewer supervised training steps, and less frequent intermediate exploitability checks than the original notebook-aligned configuration. The primary metric is exploitability, reported as NashConv divided by two. Secondary metrics include policy-value error from the known Leduc game value, nodes touched, wall-clock time, and final/best/final-window exploitability. Diagnostic metrics include average-policy loss, regret-network losses, history-value-network train/test loss, and replay-buffer sizes.
 
-**Question:** under a fixed training protocol, does the ESCHER implementation learn a low-exploitability average policy in Kuhn poker, and how variable is the result across random seeds?
+**Question:** under a fixed training protocol, does the ESCHER implementation learn a low-exploitability average policy in Leduc poker, and how variable is the result across random seeds?
 
 ### 2. ESCHER intermediate average-policy training ablation
 
-[`experiments/kuhn_poker/escher_intermediate_policy_training_ablation/`](experiments/kuhn_poker/escher_intermediate_policy_training_ablation/README.md)
+[`experiments/leduc_poker/escher_intermediate_policy_training_ablation/`](experiments/leduc_poker/escher_intermediate_policy_training_ablation/README.md)
 
 Compares the baseline ESCHER diagnostic protocol against final-only average-policy extraction. In the baseline, each intermediate exploitability checkpoint trains a playable average-policy network from average-policy memory. The ablation asks whether those repeated supervised policy-network training events affect final exploitability, or whether they are mainly an evaluation cost.
 
@@ -104,7 +104,7 @@ The experiment has three arms: the baseline intermediate-checkpoint regime, fina
 
 ### 3. ESCHER checkpoint-stability head-to-head experiment
 
-[`experiments/kuhn_poker/escher_checkpoint_stability/`](experiments/kuhn_poker/escher_checkpoint_stability/README.md)
+[`experiments/leduc_poker/escher_checkpoint_stability/`](experiments/leduc_poker/escher_checkpoint_stability/README.md)
 
 Saves playable average-policy checkpoints during ESCHER training and evaluates whether later checkpoints consistently beat earlier checkpoints in exact head-to-head play. The experiment also supports a continuous-baseline arm so the checkpoint/resume mechanism can be checked against a single uninterrupted ESCHER run.
 
@@ -112,15 +112,15 @@ Saves playable average-policy checkpoints during ESCHER training and evaluates w
 
 ### 4. ESCHER constrained hyperparameter search
 
-[`experiments/kuhn_poker/escher_constrained_hyperparameter_search/`](experiments/kuhn_poker/escher_constrained_hyperparameter_search/README.md)
+[`experiments/leduc_poker/escher_constrained_hyperparameter_search/`](experiments/leduc_poker/escher_constrained_hyperparameter_search/README.md)
 
-Runs a bounded search around the ESCHER baseline configuration to test whether poor convergence in Kuhn poker can be explained by avoidable optimisation or approximation settings. The experiment uses a screening stage over baseline, targeted, and random candidates, then confirms the strongest candidates against the baseline under matched seeds. The default search space is capped around the lightweight baseline so it tests smaller and moderately larger specifications without returning to the old notebook-scale budgets.
+Runs a bounded search around the ESCHER baseline configuration to test whether poor convergence in Leduc poker can be explained by avoidable optimisation or approximation settings. The experiment uses a screening stage over baseline, targeted, and random candidates, then confirms the strongest candidates against the baseline under matched seeds. The default search space is capped around the lightweight baseline so it tests smaller and moderately larger specifications without returning to the old notebook-scale budgets.
 
 **Question:** can a constrained change to ESCHER hyperparameters produce reliably lower exploitability than the thesis baseline?
 
 ### 5. ESCHER warm-start fair ablation
 
-[`experiments/kuhn_poker/escher_warm_start_fair_ablation/`](experiments/kuhn_poker/escher_warm_start_fair_ablation/README.md)
+[`experiments/leduc_poker/escher_warm_start_fair_ablation/`](experiments/leduc_poker/escher_warm_start_fair_ablation/README.md)
 
 Runs paired continuous and checkpoint/resume ESCHER arms to test whether interrupting training, saving the full solver state, loading it into a fresh solver, and continuing changes final policy quality. The warm-start boundary defaults to iteration 30, matching the staged exploratory workflow.
 
@@ -128,7 +128,7 @@ Runs paired continuous and checkpoint/resume ESCHER arms to test whether interru
 
 ### 6. ESCHER learning-rate schedule ablation
 
-[`experiments/kuhn_poker/escher_lr_schedule_ablation/`](experiments/kuhn_poker/escher_lr_schedule_ablation/README.md)
+[`experiments/leduc_poker/escher_lr_schedule_ablation/`](experiments/leduc_poker/escher_lr_schedule_ablation/README.md)
 
 Compares the constant-learning-rate ESCHER baseline against a decaying learning-rate schedule under matched seeds and matched training budgets. The default scheduled arm uses cosine decay from the baseline learning rate to 10% of that value.
 
@@ -136,7 +136,7 @@ Compares the constant-learning-rate ESCHER baseline against a decaying learning-
 
 ### 7. ESCHER average-policy reach-weighting ablation
 
-[`experiments/kuhn_poker/escher_reach_weighting_ablation/`](experiments/kuhn_poker/escher_reach_weighting_ablation/README.md)
+[`experiments/leduc_poker/escher_reach_weighting_ablation/`](experiments/leduc_poker/escher_reach_weighting_ablation/README.md)
 
 Compares the baseline average-policy regression loss, weighted by CFR iteration only, against a treatment that also weights samples by the acting player's reach probability. Reach multipliers are mean-normalised within each policy-training batch and exclude chance reach.
 
@@ -144,7 +144,7 @@ Compares the baseline average-policy regression loss, weighted by CFR iteration 
 
 ### 8. ESCHER value-trajectory reuse ablation
 
-[`experiments/kuhn_poker/escher_reuse_value_trajectory_ablation/`](experiments/kuhn_poker/escher_reuse_value_trajectory_ablation/README.md)
+[`experiments/leduc_poker/escher_reuse_value_trajectory_ablation/`](experiments/leduc_poker/escher_reuse_value_trajectory_ablation/README.md)
 
 Compares the baseline ESCHER value-data collection scheme, which uses a dedicated history-value traversal pass, against a treatment that reuses player-0 regret traversals to populate the history-value memory. The treatment keeps value-test traversals for diagnostics but removes the dedicated value-training traversal pass.
 
@@ -152,7 +152,7 @@ Compares the baseline ESCHER value-data collection scheme, which uses a dedicate
 
 ### 9. ESCHER disk-backed regret-memory ablation
 
-[`experiments/kuhn_poker/escher_disk_backed_regret_memory_ablation/`](experiments/kuhn_poker/escher_disk_backed_regret_memory_ablation/README.md)
+[`experiments/leduc_poker/escher_disk_backed_regret_memory_ablation/`](experiments/leduc_poker/escher_disk_backed_regret_memory_ablation/README.md)
 
 Compares the standard in-memory regret replay buffers against a disk-backed TFRecord regret replay backend streamed during regret-network training. Average-policy replay is disk-backed in both arms so the treatment isolates regret-memory storage.
 
@@ -160,7 +160,7 @@ Compares the standard in-memory regret replay buffers against a disk-backed TFRe
 
 ### 10. ESCHER on-policy joint-regret ablation
 
-[`experiments/kuhn_poker/escher_on_policy_joint_regret_ablation/`](experiments/kuhn_poker/escher_on_policy_joint_regret_ablation/README.md)
+[`experiments/leduc_poker/escher_on_policy_joint_regret_ablation/`](experiments/leduc_poker/escher_on_policy_joint_regret_ablation/README.md)
 
 Compares the baseline separate player-specific regret traversal batches against an on-policy joint-regret update variant. The treatment samples one trajectory batch from the current joint regret-matching policy and writes regret targets for the acting player at each visited decision node.
 
@@ -168,11 +168,11 @@ Compares the baseline separate player-specific regret traversal batches against 
 
 ### 11. ESCHER solver-parameter random search
 
-[`experiments/kuhn_poker/escher_solver_parameter_random_search/`](experiments/kuhn_poker/escher_solver_parameter_random_search/README.md)
+[`experiments/leduc_poker/escher_solver_parameter_random_search/`](experiments/leduc_poker/escher_solver_parameter_random_search/README.md)
 
 Runs a bounded two-stage random search over configurable ESCHER solver parameters. Screening evaluates the baseline plus sampled solver configurations under a reduced budget; confirmation compares the strongest sampled configurations against the ESCHER baseline with matched seeds and the full baseline budget. The sampled ranges include lightweight and modestly heavier candidates while excluding configurations likely to make multi-seed training time explode.
 
-**Question:** is ESCHER's Kuhn poker non-convergence partly caused by a poor balance between traversal budget, value fitting, regret fitting, policy extraction, exploration, and network capacity?
+**Question:** is ESCHER's Leduc poker non-convergence partly caused by a poor balance between traversal budget, value fitting, regret fitting, policy extraction, exploration, and network capacity?
 
 ## Setup
 
@@ -195,43 +195,43 @@ From the repository root:
 
 ```bash
 # Experiment 1 — full aligned ESCHER baseline
-python -m experiments.kuhn_poker.escher_multiseed_baseline.run
+python -m experiments.leduc_poker.escher_multiseed_baseline.run
 
 # Experiment 2 — intermediate policy-training ablation
-python -m experiments.kuhn_poker.escher_intermediate_policy_training_ablation.run
+python -m experiments.leduc_poker.escher_intermediate_policy_training_ablation.run
 
 # Experiment 3 — checkpoint-stability head-to-head analysis
-python -m experiments.kuhn_poker.escher_checkpoint_stability.run
+python -m experiments.leduc_poker.escher_checkpoint_stability.run
 
 # Experiment 4 — constrained hyperparameter search
-python -m experiments.kuhn_poker.escher_constrained_hyperparameter_search.run
+python -m experiments.leduc_poker.escher_constrained_hyperparameter_search.run
 
 # Experiment 5 — warm-start/checkpoint-resume fair ablation
-python -m experiments.kuhn_poker.escher_warm_start_fair_ablation.run
+python -m experiments.leduc_poker.escher_warm_start_fair_ablation.run
 
 # Experiment 6 — learning-rate schedule ablation
-python -m experiments.kuhn_poker.escher_lr_schedule_ablation.run
+python -m experiments.leduc_poker.escher_lr_schedule_ablation.run
 
 # Experiment 7 — average-policy reach-weighting ablation
-python -m experiments.kuhn_poker.escher_reach_weighting_ablation.run
+python -m experiments.leduc_poker.escher_reach_weighting_ablation.run
 
 # Experiment 8 — value-trajectory reuse ablation
-python -m experiments.kuhn_poker.escher_reuse_value_trajectory_ablation.run
+python -m experiments.leduc_poker.escher_reuse_value_trajectory_ablation.run
 
 # Experiment 9 — disk-backed regret-memory ablation
-python -m experiments.kuhn_poker.escher_disk_backed_regret_memory_ablation.run
+python -m experiments.leduc_poker.escher_disk_backed_regret_memory_ablation.run
 
 # Experiment 10 — on-policy joint-regret ablation
-python -m experiments.kuhn_poker.escher_on_policy_joint_regret_ablation.run
+python -m experiments.leduc_poker.escher_on_policy_joint_regret_ablation.run
 
 # Experiment 11 — solver-parameter random search
-python -m experiments.kuhn_poker.escher_solver_parameter_random_search.run
+python -m experiments.leduc_poker.escher_solver_parameter_random_search.run
 ```
 
 For a quick smoke test:
 
 ```bash
-python -m experiments.kuhn_poker.escher_multiseed_baseline.run \
+python -m experiments.leduc_poker.escher_multiseed_baseline.run \
   --seeds 1234,2025 \
   --iterations 10 \
   --traversals 50 \
@@ -242,7 +242,7 @@ python -m experiments.kuhn_poker.escher_multiseed_baseline.run \
   --evaluation-interval 5 \
   --output-root outputs/smoke_tests
 
-python -m experiments.kuhn_poker.escher_intermediate_policy_training_ablation.run \
+python -m experiments.leduc_poker.escher_intermediate_policy_training_ablation.run \
   --seeds 1234 \
   --iterations 10 \
   --traversals 50 \
@@ -253,7 +253,7 @@ python -m experiments.kuhn_poker.escher_intermediate_policy_training_ablation.ru
   --evaluation-interval 1 \
   --output-root outputs/smoke_tests
 
-python -m experiments.kuhn_poker.escher_checkpoint_stability.run \
+python -m experiments.leduc_poker.escher_checkpoint_stability.run \
   --seeds 1234 \
   --checkpoint-schedule 1,2 \
   --traversals 50 \
@@ -264,7 +264,7 @@ python -m experiments.kuhn_poker.escher_checkpoint_stability.run \
   --evaluation-interval 1 \
   --output-root outputs/smoke_tests
 
-python -m experiments.kuhn_poker.escher_constrained_hyperparameter_search.run \
+python -m experiments.leduc_poker.escher_constrained_hyperparameter_search.run \
   --screening-seeds 1234 \
   --confirmation-seeds 1234 \
   --screening-iterations 2 \
@@ -280,7 +280,7 @@ python -m experiments.kuhn_poker.escher_constrained_hyperparameter_search.run \
   --value-network-train-steps 20 \
   --output-root outputs/smoke_tests
 
-python -m experiments.kuhn_poker.escher_warm_start_fair_ablation.run \
+python -m experiments.leduc_poker.escher_warm_start_fair_ablation.run \
   --seeds 1234 \
   --iterations 2 \
   --warm-start-boundary 1 \
@@ -292,7 +292,7 @@ python -m experiments.kuhn_poker.escher_warm_start_fair_ablation.run \
   --evaluation-interval 1 \
   --output-root outputs/smoke_tests
 
-python -m experiments.kuhn_poker.escher_lr_schedule_ablation.run \
+python -m experiments.leduc_poker.escher_lr_schedule_ablation.run \
   --seeds 1234 \
   --iterations 2 \
   --traversals 5 \
@@ -303,7 +303,7 @@ python -m experiments.kuhn_poker.escher_lr_schedule_ablation.run \
   --evaluation-interval 1 \
   --output-root outputs/smoke_tests
 
-python -m experiments.kuhn_poker.escher_reach_weighting_ablation.run \
+python -m experiments.leduc_poker.escher_reach_weighting_ablation.run \
   --seeds 1234 \
   --iterations 2 \
   --traversals 5 \
@@ -314,7 +314,7 @@ python -m experiments.kuhn_poker.escher_reach_weighting_ablation.run \
   --evaluation-interval 1 \
   --output-root outputs/smoke_tests
 
-python -m experiments.kuhn_poker.escher_reuse_value_trajectory_ablation.run \
+python -m experiments.leduc_poker.escher_reuse_value_trajectory_ablation.run \
   --seeds 1234 \
   --iterations 2 \
   --traversals 5 \
@@ -326,7 +326,7 @@ python -m experiments.kuhn_poker.escher_reuse_value_trajectory_ablation.run \
   --evaluation-interval 1 \
   --output-root outputs/smoke_tests
 
-python -m experiments.kuhn_poker.escher_disk_backed_regret_memory_ablation.run \
+python -m experiments.leduc_poker.escher_disk_backed_regret_memory_ablation.run \
   --seeds 1234 \
   --iterations 2 \
   --traversals 5 \
@@ -337,7 +337,7 @@ python -m experiments.kuhn_poker.escher_disk_backed_regret_memory_ablation.run \
   --evaluation-interval 1 \
   --output-root outputs/smoke_tests
 
-python -m experiments.kuhn_poker.escher_on_policy_joint_regret_ablation.run \
+python -m experiments.leduc_poker.escher_on_policy_joint_regret_ablation.run \
   --seeds 1234 \
   --iterations 2 \
   --traversals 5 \
@@ -348,7 +348,7 @@ python -m experiments.kuhn_poker.escher_on_policy_joint_regret_ablation.run \
   --evaluation-interval 1 \
   --output-root outputs/smoke_tests
 
-python -m experiments.kuhn_poker.escher_solver_parameter_random_search.run \
+python -m experiments.leduc_poker.escher_solver_parameter_random_search.run \
   --screening-seeds 1234 \
   --confirmation-seeds 1234 \
   --screening-iterations 2 \
@@ -374,9 +374,9 @@ python -m experiments.kuhn_poker.escher_solver_parameter_random_search.run \
 Outputs are written to a timestamped subdirectory under `outputs/` by default. The key files are:
 
 Average-policy-value charts plot the configured `average_policy_value_target`.
-For Kuhn poker this is player 0's Nash equilibrium value, `-1/18`
-(`-0.0555...`); future Leduc experiments should override that config value
-rather than editing plotting code.
+For Leduc poker this is player 0's Nash equilibrium value, approximately
+`-0.085606424078`; future games should override that config value rather than
+editing plotting code.
 
 ```text
 seed_summary.csv
@@ -545,7 +545,7 @@ confirmation_paired_delta_final_exploitability.png
 
 When adding a new ESCHER experiment, follow the same pattern as the baseline:
 
-1. create a new folder under `experiments/kuhn_poker/`;
+1. create a new folder under `experiments/leduc_poker/`;
 2. include a `config.py`, `run.py`, and `README.md`;
 3. hold the baseline protocol fixed except for the intended treatment variable;
 4. use matched seeds where possible;

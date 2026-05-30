@@ -15,10 +15,10 @@ from open_spiel.python import policy
 
 from .networks import PolicyNetwork
 
-OUTPUT_FILE_PREFIX = "kuhn_poker_escher_"
+OUTPUT_FILE_PREFIX = "leduc_poker_escher_"
 
 SNAPSHOT_RE = re.compile(
-    r"kuhn_poker_escher_seed_(?P<seed>\d+)_"
+    r"leduc_poker_escher_seed_(?P<seed>\d+)_"
     r"(?P<arm>checkpointed|continuous_baseline)_"
     r"policy_snapshot_(?P<iteration>\d+)_iters\.pkl$"
 )
@@ -132,7 +132,7 @@ def save_policy_snapshot(
         "version": 1,
         "type": "escher_policy_snapshot",
         "algorithm": "ESCHER",
-        "game": str(config.get("game_name", "kuhn_poker")),
+        "game": str(config.get("game_name", "leduc_poker")),
         "arm": str(arm),
         "seed": int(seed),
         "checkpoint_iteration": int(iteration),
@@ -218,7 +218,7 @@ class LoadedESCHERPolicy(policy.Policy):
 def discover_policy_snapshots(snapshot_dir: str | Path) -> List[Dict[str, Any]]:
     """Return inventory rows for ESCHER policy snapshots in ``snapshot_dir``."""
     rows = []
-    for path in sorted(Path(snapshot_dir).glob("kuhn_poker_escher_seed_*_policy_snapshot_*_iters.pkl")):
+    for path in sorted(Path(snapshot_dir).glob("leduc_poker_escher_seed_*_policy_snapshot_*_iters.pkl")):
         match = SNAPSHOT_RE.match(path.name)
         if not match:
             continue

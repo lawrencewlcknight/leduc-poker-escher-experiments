@@ -11,7 +11,7 @@ from scipy import stats
 
 from .constants import (
     AVERAGE_POLICY_VALUE_TARGET_LABEL,
-    KUHN_AVERAGE_POLICY_VALUE_TARGET,
+    LEDUC_AVERAGE_POLICY_VALUE_TARGET,
     NASH_EXPLOITABILITY_TARGET,
     NASH_EXPLOITABILITY_TARGET_LABEL,
 )
@@ -31,7 +31,7 @@ def plot_multiseed_results(
     results: List[Dict[str, Any]],
     run_dir: str | Path,
     *,
-    average_policy_value_target: float = KUHN_AVERAGE_POLICY_VALUE_TARGET,
+    average_policy_value_target: float = LEDUC_AVERAGE_POLICY_VALUE_TARGET,
 ) -> None:
     """Create thesis-style plots matching the Deep CFR repo look and feel."""
     run_dir = Path(run_dir)
@@ -67,7 +67,7 @@ def plot_multiseed_results(
     )
     ax.set_xlabel("Training iteration")
     ax.set_ylabel("Exploitability (NashConv/2)")
-    ax.set_title("Kuhn Poker ESCHER: Exploitability Across Seeds")
+    ax.set_title("Leduc Poker ESCHER: Exploitability Across Seeds")
     ax.grid(True)
     ax.legend()
     fig.tight_layout()
@@ -92,7 +92,7 @@ def plot_multiseed_results(
     )
     ax.set_xlabel("Training iteration")
     ax.set_ylabel("Average policy value")
-    ax.set_title("Kuhn Poker ESCHER: Average Policy Value Across Seeds")
+    ax.set_title("Leduc Poker ESCHER: Average Policy Value Across Seeds")
     ax.grid(True)
     ax.legend()
     fig.tight_layout()
@@ -117,7 +117,7 @@ def plot_multiseed_results(
     )
     ax.set_xlabel("Nodes touched")
     ax.set_ylabel("Exploitability (NashConv/2)")
-    ax.set_title("Kuhn Poker ESCHER: Exploitability by Nodes Touched")
+    ax.set_title("Leduc Poker ESCHER: Exploitability by Nodes Touched")
     ax.grid(True)
     ax.legend()
     fig.tight_layout()
@@ -142,7 +142,7 @@ def plot_multiseed_results(
     )
     ax.set_xlabel("Nodes touched")
     ax.set_ylabel("Average policy value")
-    ax.set_title("Kuhn Poker ESCHER: Average Policy Value by Nodes Touched")
+    ax.set_title("Leduc Poker ESCHER: Average Policy Value by Nodes Touched")
     ax.grid(True)
     ax.legend()
     fig.tight_layout()
@@ -161,8 +161,8 @@ def plot_multiseed_results(
         label="Mean $\\pm$ s.e.",
     )
     ax.set_xlabel("Training iteration")
-    ax.set_ylabel(r"$|v(\sigma) - (-1/18)|$")
-    ax.set_title("Kuhn Poker ESCHER: Policy-Value Error")
+    ax.set_ylabel(r"$|v(\sigma) - v^*_{\mathrm{Leduc}}|$")
+    ax.set_title("Leduc Poker ESCHER: Policy-Value Error")
     ax.grid(True)
     ax.legend()
     fig.tight_layout()

@@ -19,7 +19,7 @@ import pyspiel
 from open_spiel.python import policy
 from open_spiel.python.algorithms import exploitability, expected_game_score
 
-from .constants import DEFAULT_FINAL_WINDOW, KUHN_GAME_VALUE_PLAYER_0
+from .constants import DEFAULT_FINAL_WINDOW, LEDUC_GAME_VALUE_PLAYER_0
 from .seeding import set_seed_tf
 from .solver import ESCHERSolver
 
@@ -232,7 +232,7 @@ def run_single_seed(
     exploitability_curve = np.asarray(convs, dtype=np.float64) / 2.0
     nodes_touched = np.asarray(nodes_touched, dtype=np.float64)
     avg_policy_values = np.asarray(avg_policy_values, dtype=np.float64)
-    value_error = np.abs(avg_policy_values - KUHN_GAME_VALUE_PLAYER_0)
+    value_error = np.abs(avg_policy_values - LEDUC_GAME_VALUE_PLAYER_0)
     diagnostics = {k: np.asarray(v) for k, v in diagnostics.items()}
     iterations = diagnostics["iteration"].astype(int)
     wall_clock = diagnostics["wall_clock_seconds"].astype(float)
@@ -249,7 +249,7 @@ def run_single_seed(
         "best_exploitability": float(np.min(exploitability_curve)),
         "final_window_mean_exploitability": final_window_mean(exploitability_curve),
         "final_policy_value": float(final_policy_value),
-        "final_policy_value_error": float(abs(final_policy_value - KUHN_GAME_VALUE_PLAYER_0)),
+        "final_policy_value_error": float(abs(final_policy_value - LEDUC_GAME_VALUE_PLAYER_0)),
         "best_policy_value_error": float(np.min(value_error)),
         "final_nodes_touched": float(nodes_touched[-1]),
         "final_wall_clock_seconds": float(wall_clock[-1]),
@@ -304,7 +304,7 @@ def evaluate_final_policy(game, solver: ESCHERSolver) -> Dict[str, float]:
         "final_nash_conv_recomputed": float(final_nash_conv),
         "final_exploitability": float(final_nash_conv / 2.0),
         "final_policy_value": float(final_policy_values[0]),
-        "final_policy_value_error": float(abs(final_policy_values[0] - KUHN_GAME_VALUE_PLAYER_0)),
+        "final_policy_value_error": float(abs(final_policy_values[0] - LEDUC_GAME_VALUE_PLAYER_0)),
     }
 
 
@@ -345,7 +345,7 @@ def run_single_seed_variant(
             convs / 2.0 if convs.size else np.asarray([], dtype=np.float64)
         )
         intermediate_value_error = (
-            np.abs(avg_policy_values - KUHN_GAME_VALUE_PLAYER_0)
+            np.abs(avg_policy_values - LEDUC_GAME_VALUE_PLAYER_0)
             if avg_policy_values.size
             else np.asarray([], dtype=np.float64)
         )

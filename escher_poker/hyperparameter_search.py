@@ -14,7 +14,7 @@ import pyspiel
 from open_spiel.python import policy
 from open_spiel.python.algorithms import exploitability, expected_game_score
 
-from .constants import DEFAULT_FINAL_WINDOW, KUHN_GAME_VALUE_PLAYER_0
+from .constants import DEFAULT_FINAL_WINDOW, LEDUC_GAME_VALUE_PLAYER_0
 from .experiment_utils import (
     cleanup_tensorflow_memory,
     final_window_mean,
@@ -224,7 +224,7 @@ def run_single_hyperparameter_seed(
             del solver
         cleanup_tensorflow_memory()
 
-    value_error = np.abs(avg_policy_values - KUHN_GAME_VALUE_PLAYER_0)
+    value_error = np.abs(avg_policy_values - LEDUC_GAME_VALUE_PLAYER_0)
     final_exploitability = _safe_last(exploitability_curve)
     summary = {
         "stage": stage_name,
@@ -241,7 +241,7 @@ def run_single_hyperparameter_seed(
         "exploitability_auc": _mean_finite(exploitability_curve),
         "final_policy_value": float(final_policy_value) if np.isfinite(final_policy_value) else np.nan,
         "final_policy_value_error": (
-            float(abs(final_policy_value - KUHN_GAME_VALUE_PLAYER_0))
+            float(abs(final_policy_value - LEDUC_GAME_VALUE_PLAYER_0))
             if np.isfinite(final_policy_value)
             else np.nan
         ),

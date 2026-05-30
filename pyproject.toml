@@ -3,9 +3,9 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "kuhn-poker-escher-experiments"
+name = "leduc-poker-escher-experiments"
 version = "0.1.0"
-description = "Kuhn poker ESCHER experiments for neural CFR thesis work"
+description = "Leduc poker ESCHER experiments for neural CFR thesis work"
 requires-python = ">=3.9,<3.10"
 
 [tool.setuptools.packages.find]

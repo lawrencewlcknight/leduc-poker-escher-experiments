@@ -11,7 +11,7 @@ import numpy as np
 
 from .constants import (
     AVERAGE_POLICY_VALUE_TARGET_LABEL,
-    KUHN_AVERAGE_POLICY_VALUE_TARGET,
+    LEDUC_AVERAGE_POLICY_VALUE_TARGET,
     NASH_EXPLOITABILITY_TARGET,
     NASH_EXPLOITABILITY_TARGET_LABEL,
 )
@@ -59,7 +59,7 @@ def plot_mean_bar(
     title: str,
     output_path: str | Path,
     *,
-    average_policy_value_target: float = KUHN_AVERAGE_POLICY_VALUE_TARGET,
+    average_policy_value_target: float = LEDUC_AVERAGE_POLICY_VALUE_TARGET,
 ) -> None:
     """Plot variant means with standard-error bars."""
     rows = _metric_stats_by_variant(summary_rows, variants, metric)
@@ -169,7 +169,7 @@ def plot_reference_intermediate_curves(
     reference_variant_id: str,
     run_dir: str | Path,
     *,
-    average_policy_value_target: float = KUHN_AVERAGE_POLICY_VALUE_TARGET,
+    average_policy_value_target: float = LEDUC_AVERAGE_POLICY_VALUE_TARGET,
 ) -> None:
     """Plot intermediate exploitability/value-error curves for the reference arm."""
     run_dir = Path(run_dir)
@@ -241,7 +241,7 @@ def plot_reference_intermediate_curves(
     ax.plot(iterations, means, marker="o", label="Mean value error")
     ax.fill_between(iterations, means - errors, means + errors, alpha=0.2, label="Mean +/- s.e.")
     ax.set_xlabel("ESCHER iteration")
-    ax.set_ylabel(r"Absolute error from $-1/18$")
+    ax.set_ylabel(r"Absolute error from Leduc equilibrium value")
     ax.set_title("ESCHER baseline: intermediate policy-value error")
     ax.grid(True, alpha=0.3)
     ax.legend()
@@ -262,7 +262,7 @@ def plot_policy_training_ablation(
     reference_variant_id: str,
     run_dir: str | Path,
     *,
-    average_policy_value_target: float = KUHN_AVERAGE_POLICY_VALUE_TARGET,
+    average_policy_value_target: float = LEDUC_AVERAGE_POLICY_VALUE_TARGET,
 ) -> None:
     """Create the standard thesis plots for policy-training ablations."""
     run_dir = Path(run_dir)

@@ -10,7 +10,7 @@ import numpy as np
 
 from .constants import (
     AVERAGE_POLICY_VALUE_TARGET_LABEL,
-    KUHN_AVERAGE_POLICY_VALUE_TARGET,
+    LEDUC_AVERAGE_POLICY_VALUE_TARGET,
     NASH_EXPLOITABILITY_TARGET,
     NASH_EXPLOITABILITY_TARGET_LABEL,
 )
@@ -81,7 +81,7 @@ def plot_checkpoint_training_summary(
     final_iteration: int,
     run_dir: str | Path,
     *,
-    average_policy_value_target: float = KUHN_AVERAGE_POLICY_VALUE_TARGET,
+    average_policy_value_target: float = LEDUC_AVERAGE_POLICY_VALUE_TARGET,
 ) -> None:
     """Plot checkpoint exploitability and final checkpoint-vs-baseline deltas."""
     run_dir = Path(run_dir)
@@ -108,7 +108,7 @@ def plot_checkpoint_training_summary(
         )
         ax.set_xlabel("Checkpoint iteration")
         ax.set_ylabel("Exploitability (NashConv/2)")
-        ax.set_title("Kuhn Poker ESCHER: Checkpoint Exploitability")
+        ax.set_title("Leduc Poker ESCHER: Checkpoint Exploitability")
         ax.grid(True, alpha=0.3)
         ax.legend()
         fig.tight_layout()
@@ -142,7 +142,7 @@ def plot_checkpoint_training_summary(
         )
         ax.set_xlabel("Checkpoint iteration")
         ax.set_ylabel("Average policy value")
-        ax.set_title("Kuhn Poker ESCHER: Checkpoint Average Policy Value")
+        ax.set_title("Leduc Poker ESCHER: Checkpoint Average Policy Value")
         ax.grid(True, alpha=0.3)
         ax.legend()
         fig.tight_layout()
@@ -194,7 +194,7 @@ def plot_checkpoint_head_to_head_outputs(
     run_dir: str | Path,
     *,
     annotate_heatmap: bool = True,
-    average_policy_value_target: float = KUHN_AVERAGE_POLICY_VALUE_TARGET,
+    average_policy_value_target: float = LEDUC_AVERAGE_POLICY_VALUE_TARGET,
 ) -> None:
     """Create thesis plots for exact checkpoint head-to-head analysis."""
     run_dir = Path(run_dir)

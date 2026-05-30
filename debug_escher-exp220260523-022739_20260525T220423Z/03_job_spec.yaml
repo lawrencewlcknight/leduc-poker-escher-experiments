@@ -12,7 +12,7 @@ allocationPolicy:
     - zones/europe-west1-c
     - zones/europe-west1-d
   serviceAccount:
-    email: kuhn-escher-runner@clever-overview-399515.iam.gserviceaccount.com
+    email: leduc-escher-runner@clever-overview-399515.iam.gserviceaccount.com
 logsPolicy:
   destination: CLOUD_LOGGING
 taskGroups:
@@ -33,7 +33,7 @@ taskGroups:
           export DEBIAN_FRONTEND=noninteractive
 
           echo "Starting job: escher-exp220260523-022739"
-          echo "Experiment command: python -m experiments.kuhn_poker.escher_intermediate_policy_training_ablation.run     --output-root outputs/cloud/escher-exp2"
+          echo "Experiment command: python -m experiments.leduc_poker.escher_intermediate_policy_training_ablation.run     --output-root outputs/cloud/escher-exp2"
           echo "Requested CPU milli: 8000"
           echo "Requested memory MiB: 32000"
 
@@ -50,8 +50,8 @@ taskGroups:
           mkdir -p "$WORKDIR"
           cd "$WORKDIR"
 
-          git clone --depth 1 https://github.com/lawrencewlcknight/kuhn-poker-escher-experiments.git
-          cd kuhn-poker-escher-experiments
+          git clone --depth 1 https://github.com/lawrencewlcknight/leduc-poker-escher-experiments.git
+          cd leduc-poker-escher-experiments
 
           export HOME="${HOME:-/root}"
           export TMPDIR="/tmp"
@@ -72,8 +72,8 @@ taskGroups:
           curl -LsSf https://astral.sh/uv/install.sh | sh
           export PATH="$HOME/.local/bin:$PATH"
           uv python install 3.9
-          uv venv --python 3.9 --seed /tmp/kuhn-escher-venv
-          source /tmp/kuhn-escher-venv/bin/activate
+          uv venv --python 3.9 --seed /tmp/leduc-escher-venv
+          source /tmp/leduc-escher-venv/bin/activate
           python --version
 
           python -m pip install --upgrade pip setuptools wheel
@@ -83,11 +83,11 @@ taskGroups:
 
           mkdir -p "outputs/cloud/escher-exp220260523-022739"
 
-          python -m experiments.kuhn_poker.escher_intermediate_policy_training_ablation.run     --output-root outputs/cloud/escher-exp2
+          python -m experiments.leduc_poker.escher_intermediate_policy_training_ablation.run     --output-root outputs/cloud/escher-exp2
 
           deactivate
 
           echo "Experiment completed. Copying outputs to Cloud Storage."
-          gsutil -m cp -r outputs "gs://clever-overview-399515-kuhn-poker-escher-results/escher-exp220260523-022739/"
+          gsutil -m cp -r outputs "gs://clever-overview-399515-leduc-poker-escher-results/escher-exp220260523-022739/"
 
           echo "Done."

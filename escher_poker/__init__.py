@@ -1,4 +1,4 @@
-"""Reusable ESCHER experiment code for Kuhn poker."""
+"""Reusable ESCHER experiment code for Leduc poker."""
 
 __all__ = [
     "ablation_plotting",
