@@ -12,7 +12,7 @@ DEFAULT_CONFIG = {
     # networks and many supervised update steps; those were expensive enough to
     # crash long-running jobs. These defaults keep the experiment structure but
     # make the solver deliberately lightweight.
-    "num_iterations": 40,
+    "num_iterations": 80,
     "num_traversals": 150,
     "num_val_fn_traversals": 150,
     "check_exploitability_every": 10,
