@@ -237,10 +237,10 @@ Before running a full experiment, submit a very small ESCHER baseline smoke test
 ```
 
 The script prints the Batch script before submission. Check that the upload line
-uses `gsutil`, for example:
+uses `gcloud storage cp`, for example:
 
 ```bash
-gsutil -m cp -r outputs "gs://your-project-id-leduc-poker-escher-results/escher-smoke-exp1-.../"
+gcloud storage cp --recursive outputs "gs://your-project-id-leduc-poker-escher-results/escher-smoke-exp1-.../"
 ```
 
 After submission, this command can be used to check whether the experiment job is
@@ -564,6 +564,17 @@ Available ESCHER experiment modules:
 | 9. Disk-backed regret-memory ablation | `escher_disk_backed_regret_memory_ablation` |
 | 10. On-policy joint-regret ablation | `escher_on_policy_joint_regret_ablation` |
 | 11. Solver-parameter random search | `escher_solver_parameter_random_search` |
+| 12. Diagnostic hypothesis sweep | `escher_diagnostic_hypothesis_sweep` |
+| 13. Author-budget multi-seed validation | `escher_author_budget_multiseed` |
+| 14. Network-size sweep | `escher_network_size_sweep` |
+| 15. Separate network architecture sweep | `escher_separate_network_architecture_sweep` |
+| 16. Regret-network width sweep | `escher_regret_network_width_sweep` |
+| 17. Policy-network width sweep | `escher_policy_network_width_sweep` |
+| 18. Layer-normalisation ablation | `escher_layer_norm_ablation` |
+| 19. Activation-function sweep | `escher_activation_sweep` |
+| 20. Residual-MLP sweep | `escher_residual_mlp_sweep` |
+| 21. Bottleneck architecture sweep | `escher_bottleneck_architecture_sweep` |
+| 22. Shared-trunk/action-head sweep | `escher_shared_trunk_head_sweep` |
 
 Example:
 
@@ -651,19 +662,30 @@ The script uses:
 ```bash
 curl -LsSf https://astral.sh/uv/install.sh | sh
 export PATH="$HOME/.local/bin:$PATH"
+uv python install 3.10
+export CLOUDSDK_PYTHON="$(uv python find 3.10)"
 uv python install 3.9
 uv venv --python 3.9 --seed /tmp/leduc-escher-venv
 source /tmp/leduc-escher-venv/bin/activate
+python -m pip install --no-cache-dir --no-build-isolation -r requirements.txt
+python -m pip install --no-cache-dir --no-build-isolation -e .
 ```
 
-and deactivates the environment after the experiment command. Output copying is
-handled by the cleanup trap so it runs after both successful and failed
-experiment commands:
+The ESCHER experiment runs from the Python 3.9 virtual environment. Cloud SDK is
+pointed at a separate Python 3.10 runtime with `CLOUDSDK_PYTHON`, because current
+`gcloud storage` no longer supports Python 3.9. Uploading is handled after the
+experiment by `gcloud storage cp --recursive`, not by `gsutil` or by Google
+Python client libraries installed into the experiment environment.
+
+The script deactivates the experiment environment after the experiment command.
+Output copying is handled by the cleanup trap so it runs after both successful
+and failed experiment commands:
 
 ```bash
 deactivate || true
 # cleanup trap uploads outputs to Cloud Storage
 ```
 
-The script uses `gsutil` rather than `gcloud storage cp` because `gsutil` has
-proved reliable on the default Batch image for this workflow.
+The script does not use `gsutil`; this avoids the `gsutil` Python-runtime issue
+seen on some Batch images while also avoiding upload-time dependencies on the
+experiment virtual environment.

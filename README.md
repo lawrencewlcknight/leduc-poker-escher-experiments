@@ -65,15 +65,32 @@ The repository is organised so that each experiment can be run independently whi
 │       │   ├── config.py
 │       │   ├── run.py
 │       │   └── README.md
-│       └── escher_solver_parameter_random_search/    # Experiment 11
-│           ├── config.py
-│           ├── run.py
-│           └── README.md
+│       ├── escher_solver_parameter_random_search/    # Experiment 11
+│       │   ├── config.py
+│       │   ├── run.py
+│       │   └── README.md
+│       ├── escher_diagnostic_hypothesis_sweep/       # Experiment 12
+│       │   ├── config.py
+│       │   ├── run.py
+│       │   └── README.md
+│       ├── escher_author_budget_multiseed/           # Experiment 13
+│       │   ├── config.py
+│       │   ├── run.py
+│       │   └── README.md
+│       ├── escher_network_size_sweep/                # Experiment 14
+│       ├── escher_separate_network_architecture_sweep/ # Experiment 15
+│       ├── escher_regret_network_width_sweep/        # Experiment 16
+│       ├── escher_policy_network_width_sweep/        # Experiment 17
+│       ├── escher_layer_norm_ablation/               # Experiment 18
+│       ├── escher_activation_sweep/                  # Experiment 19
+│       ├── escher_residual_mlp_sweep/                # Experiment 20
+│       ├── escher_bottleneck_architecture_sweep/     # Experiment 21
+│       └── escher_shared_trunk_head_sweep/           # Experiment 22
 ├── docs/
 │   └── OUTPUT_CONVENTIONS.md
 ├── notebooks/                                        # Original notebook archive
 ├── outputs/                                          # Experiment outputs (gitignored)
-├── tests/                                            # Placeholder test package
+├── tests/                                            # Import, config, and artifact-helper tests
 ├── venv/                                             # Placeholder only; environment not committed
 ├── pyproject.toml
 ├── requirements.txt
@@ -174,6 +191,58 @@ Runs a bounded two-stage random search over configurable ESCHER solver parameter
 
 **Question:** is ESCHER's Leduc poker non-convergence partly caused by a poor balance between traversal budget, value fitting, regret fitting, policy extraction, exploration, and network capacity?
 
+### 12. ESCHER diagnostic hypothesis sweep
+
+[`experiments/leduc_poker/escher_diagnostic_hypothesis_sweep/`](experiments/leduc_poker/escher_diagnostic_hypothesis_sweep/README.md)
+
+Runs a quick single-seed diagnostic sweep over the leading ESCHER exploitability
+hypotheses: disabling importance sampling, using uniform zero-regret fallback,
+skipping intermediate average-policy extraction, and increasing to a larger
+author-style Leduc budget. This experiment is meant for fast insight rather than
+thesis-grade multi-seed confirmation.
+
+**Question:** which suspected implementation or parameterisation issue most directly explains ESCHER's poor exploitability convergence?
+
+### 13. ESCHER author-budget multi-seed validation
+
+[`experiments/leduc_poker/escher_author_budget_multiseed/`](experiments/leduc_poker/escher_author_budget_multiseed/README.md)
+
+Runs the best-performing Experiment 12 configuration for 80 ESCHER iterations
+over five seeds. This uses the author-style Leduc budget, disables importance
+sampling in regret targets, and uses a uniform legal-action zero-regret fallback.
+
+**Question:** does the best single-seed diagnostic configuration retain its
+lower exploitability when run for the full baseline iteration budget over a
+small multi-seed validation set?
+
+### 14. ESCHER network-size sweep
+
+[`experiments/leduc_poker/escher_network_size_sweep/`](experiments/leduc_poker/escher_network_size_sweep/README.md)
+
+Runs a single-seed sweep over policy, regret, and history-value network
+architectures while keeping the Experiment 13 training protocol fixed. The sweep
+tests small, lightweight, reference, wider, and deeper multilayer perceptrons.
+
+**Question:** how sensitive is the revised ESCHER configuration to hidden-layer
+width and depth?
+
+### 15-22. ESCHER architecture diagnostic sweeps
+
+These single-seed diagnostic experiments extend Experiment 14 by isolating
+specific neural-network design choices under the Experiment 13 training budget:
+
+- [`escher_separate_network_architecture_sweep`](experiments/leduc_poker/escher_separate_network_architecture_sweep/README.md) varies relative capacity across the policy, regret, and value networks.
+- [`escher_regret_network_width_sweep`](experiments/leduc_poker/escher_regret_network_width_sweep/README.md) varies regret-network width while holding the other networks fixed.
+- [`escher_policy_network_width_sweep`](experiments/leduc_poker/escher_policy_network_width_sweep/README.md) varies average-policy-network width while holding the other networks fixed.
+- [`escher_layer_norm_ablation`](experiments/leduc_poker/escher_layer_norm_ablation/README.md) tests whether layer normalisation helps or hurts each network.
+- [`escher_activation_sweep`](experiments/leduc_poker/escher_activation_sweep/README.md) compares LeakyReLU, ReLU, ELU, GELU, Swish, and Tanh.
+- [`escher_residual_mlp_sweep`](experiments/leduc_poker/escher_residual_mlp_sweep/README.md) compares plain MLPs, same-width residual blocks, and projection residual blocks.
+- [`escher_bottleneck_architecture_sweep`](experiments/leduc_poker/escher_bottleneck_architecture_sweep/README.md) compares bottleneck, non-bottleneck, wide, and expanding MLP shapes.
+- [`escher_shared_trunk_head_sweep`](experiments/leduc_poker/escher_shared_trunk_head_sweep/README.md) compares the current shared trunk plus linear action-output layer with separate per-action heads.
+
+**Question:** which network-design choices most improve ESCHER's exploitability
+convergence once the stronger Experiment 13 training protocol is fixed?
+
 ## Setup
 
 Create and activate a Python 3.9 virtual environment. The repository contains
@@ -226,6 +295,39 @@ python -m experiments.leduc_poker.escher_on_policy_joint_regret_ablation.run
 
 # Experiment 11 — solver-parameter random search
 python -m experiments.leduc_poker.escher_solver_parameter_random_search.run
+
+# Experiment 12 — quick diagnostic hypothesis sweep
+python -m experiments.leduc_poker.escher_diagnostic_hypothesis_sweep.run
+
+# Experiment 13 — author-budget multi-seed validation
+python -m experiments.leduc_poker.escher_author_budget_multiseed.run
+
+# Experiment 14 — network-size sweep
+python -m experiments.leduc_poker.escher_network_size_sweep.run
+
+# Experiment 15 — separate network architecture sweep
+python -m experiments.leduc_poker.escher_separate_network_architecture_sweep.run
+
+# Experiment 16 — regret-network width sweep
+python -m experiments.leduc_poker.escher_regret_network_width_sweep.run
+
+# Experiment 17 — policy-network width sweep
+python -m experiments.leduc_poker.escher_policy_network_width_sweep.run
+
+# Experiment 18 — layer-normalisation ablation
+python -m experiments.leduc_poker.escher_layer_norm_ablation.run
+
+# Experiment 19 — activation-function sweep
+python -m experiments.leduc_poker.escher_activation_sweep.run
+
+# Experiment 20 — residual-MLP sweep
+python -m experiments.leduc_poker.escher_residual_mlp_sweep.run
+
+# Experiment 21 — bottleneck architecture sweep
+python -m experiments.leduc_poker.escher_bottleneck_architecture_sweep.run
+
+# Experiment 22 — shared-trunk/action-head sweep
+python -m experiments.leduc_poker.escher_shared_trunk_head_sweep.run
 ```
 
 For a quick smoke test:

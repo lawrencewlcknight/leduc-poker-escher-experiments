@@ -1,5 +1,4 @@
 # TODO
 
-- Add remaining ESCHER ablation/checkpoint/search experiments as separate folders under `experiments/leduc_poker/`.
+- Add smoke tests for the experiment entry points once OpenSpiel/TensorFlow are available in the execution environment.
 - Add unit tests for replay, policy normalisation, and export utilities.
-- Add smoke tests once OpenSpiel/TensorFlow are available in the execution environment.

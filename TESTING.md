@@ -22,9 +22,10 @@ python -m compileall escher_poker experiments tests
 
 This catches syntax errors. It does not guarantee that TensorFlow/OpenSpiel are installed correctly.
 
-## 3. Unit-test placeholder
+## 3. Unit tests
 
-A test package is included so proper unit tests can be added as the ESCHER experiment suite grows.
+The test package covers import checks, thesis-artifact promotion helpers, and
+configuration sanity checks for the higher-numbered ESCHER experiments.
 
 ```bash
 pytest
@@ -253,6 +254,17 @@ python -m experiments.leduc_poker.escher_reuse_value_trajectory_ablation.run
 python -m experiments.leduc_poker.escher_disk_backed_regret_memory_ablation.run
 python -m experiments.leduc_poker.escher_on_policy_joint_regret_ablation.run
 python -m experiments.leduc_poker.escher_solver_parameter_random_search.run
+python -m experiments.leduc_poker.escher_diagnostic_hypothesis_sweep.run
+python -m experiments.leduc_poker.escher_author_budget_multiseed.run
+python -m experiments.leduc_poker.escher_network_size_sweep.run
+python -m experiments.leduc_poker.escher_separate_network_architecture_sweep.run
+python -m experiments.leduc_poker.escher_regret_network_width_sweep.run
+python -m experiments.leduc_poker.escher_policy_network_width_sweep.run
+python -m experiments.leduc_poker.escher_layer_norm_ablation.run
+python -m experiments.leduc_poker.escher_activation_sweep.run
+python -m experiments.leduc_poker.escher_residual_mlp_sweep.run
+python -m experiments.leduc_poker.escher_bottleneck_architecture_sweep.run
+python -m experiments.leduc_poker.escher_shared_trunk_head_sweep.run
 ```
 
 The full runs use the aligned ESCHER baseline configuration. Most experiments default to the 10 thesis seeds; some targeted ablations use the smaller notebook seed set unless `--seeds` is supplied. These may take a long time.
