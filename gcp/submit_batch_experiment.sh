@@ -124,8 +124,13 @@ STATUS_JSON
   local upload_code=0
   if [[ -d "$REPO_DIR/outputs" ]]; then
     echo "Uploading outputs to Cloud Storage: $BUCKET_DEST"
-    gsutil -m cp -r "$REPO_DIR/outputs" "$BUCKET_DEST"
-    upload_code="$?"
+    if command -v gcloud >/dev/null 2>&1; then
+      gcloud storage cp --recursive "$REPO_DIR/outputs" "$BUCKET_DEST"
+      upload_code="$?"
+    else
+      echo "gcloud command is unavailable; cannot upload outputs."
+      upload_code=1
+    fi
     echo "Upload exit code: $upload_code"
   else
     echo "No outputs directory found at cleanup; nothing to upload."
@@ -211,9 +216,17 @@ free -h || true
 df -h || true
 lscpu | head -30 || true
 
-# Use Python 3.9 to match the repository metadata and TensorFlow requirements.
 curl -LsSf https://astral.sh/uv/install.sh | sh
 export PATH="$HOME/.local/bin:$PATH"
+
+# Keep Google Cloud CLI on a runtime it supports. This is separate from the
+# ESCHER experiment environment below, which remains Python 3.9.
+uv python install 3.10
+export CLOUDSDK_PYTHON="$(uv python find 3.10)"
+echo "Configured Cloud SDK Python:"
+"$CLOUDSDK_PYTHON" --version
+
+# Use Python 3.9 to match the repository metadata and TensorFlow requirements.
 uv python install 3.9
 uv venv --python 3.9 --seed /tmp/leduc-escher-venv
 source /tmp/leduc-escher-venv/bin/activate
