@@ -25,6 +25,7 @@ import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 from tqdm import tqdm  # noqa: E402
 
+from escher_poker.chart_titles import set_chart_title  # noqa: E402
 from escher_poker.constants import (  # noqa: E402
     AVERAGE_POLICY_VALUE_TARGET_LABEL,
     LEDUC_GAME_VALUE_PLAYER_0,
@@ -171,7 +172,7 @@ def _plot_final_exploitability(run_dir: Path, summary_rows: List[Dict], title: s
     ax.set_xticks(x)
     ax.set_xticklabels(labels, rotation=35, ha="right")
     ax.set_ylabel("Exploitability (NashConv / 2)")
-    ax.set_title(title)
+    set_chart_title(ax, title)
     ax.legend()
     fig.tight_layout()
     fig.savefig(run_dir / "final_exploitability_by_variant.png", dpi=200, bbox_inches="tight")
@@ -205,7 +206,7 @@ def _plot_curves(run_dir: Path, curve_rows: List[Dict]) -> None:
     )
     ax.set_xlabel("Training iteration")
     ax.set_ylabel("Exploitability (NashConv / 2)")
-    ax.set_title("Intermediate exploitability checkpoints")
+    set_chart_title(ax, "Intermediate exploitability checkpoints")
     ax.legend(fontsize=8)
     fig.tight_layout()
     fig.savefig(run_dir / "intermediate_exploitability_by_iteration.png", dpi=200, bbox_inches="tight")
@@ -233,7 +234,7 @@ def _plot_curves(run_dir: Path, curve_rows: List[Dict]) -> None:
     )
     ax.set_xlabel("Training iteration")
     ax.set_ylabel("Average policy value")
-    ax.set_title("Intermediate average-policy value checkpoints")
+    set_chart_title(ax, "Intermediate average-policy value checkpoints")
     ax.legend(fontsize=8)
     fig.tight_layout()
     fig.savefig(run_dir / "average_policy_value_by_iteration.png", dpi=200, bbox_inches="tight")

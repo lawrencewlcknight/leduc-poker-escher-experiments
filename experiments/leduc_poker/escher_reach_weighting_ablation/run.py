@@ -32,6 +32,7 @@ from open_spiel.python import policy  # noqa: E402
 from open_spiel.python.algorithms import exploitability, expected_game_score  # noqa: E402
 from tqdm import tqdm  # noqa: E402
 
+from escher_poker.chart_titles import set_chart_title  # noqa: E402
 from escher_poker.constants import (  # noqa: E402
     AVERAGE_POLICY_VALUE_TARGET_LABEL,
     LEDUC_GAME_VALUE_PLAYER_0,
@@ -500,7 +501,7 @@ def _plot_curve(
         )
     ax.set_xlabel(x_col.replace("_", " ").title())
     ax.set_ylabel(ylabel)
-    ax.set_title(title)
+    set_chart_title(ax, title)
     ax.grid(True, alpha=0.3)
     ax.legend()
     fig.tight_layout()
@@ -533,7 +534,7 @@ def _plot_final_bar(summary_rows: List[Dict[str, Any]], run_dir: Path) -> None:
         label=NASH_EXPLOITABILITY_TARGET_LABEL,
     )
     ax.set_ylabel("Final exploitability (NashConv/2)")
-    ax.set_title("ESCHER reach-weighting ablation: final exploitability")
+    set_chart_title(ax, "ESCHER reach-weighting ablation: final exploitability")
     ax.grid(True, axis="y", alpha=0.3)
     ax.tick_params(axis="x", rotation=20)
     ax.legend()
@@ -567,7 +568,7 @@ def _plot_final_policy_value_bar(summary_rows: List[Dict[str, Any]], run_dir: Pa
         label=AVERAGE_POLICY_VALUE_TARGET_LABEL,
     )
     ax.set_ylabel("Final average policy value")
-    ax.set_title("ESCHER reach-weighting ablation: final average policy value")
+    set_chart_title(ax, "ESCHER reach-weighting ablation: final average policy value")
     ax.grid(True, axis="y", alpha=0.3)
     ax.tick_params(axis="x", rotation=20)
     ax.legend()
@@ -588,7 +589,7 @@ def _plot_paired_delta(paired_rows: List[Dict[str, Any]], run_dir: Path) -> None
     )
     ax.set_xlabel("Seed")
     ax.set_ylabel("Reach-weighted - baseline final exploitability")
-    ax.set_title("Paired effect of reach-weighted average-policy loss")
+    set_chart_title(ax, "Paired effect of reach-weighted average-policy loss")
     ax.grid(True, alpha=0.3)
     fig.tight_layout()
     fig.savefig(

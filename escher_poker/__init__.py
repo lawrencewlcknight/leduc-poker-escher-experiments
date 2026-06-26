@@ -2,6 +2,7 @@
 
 __all__ = [
     "ablation_plotting",
+    "chart_titles",
     "checkpoint_analysis",
     "checkpoint_plotting",
     "constants",

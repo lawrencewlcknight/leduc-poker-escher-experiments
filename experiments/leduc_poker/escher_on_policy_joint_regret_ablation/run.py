@@ -31,6 +31,7 @@ from open_spiel.python import policy  # noqa: E402
 from open_spiel.python.algorithms import exploitability, expected_game_score  # noqa: E402
 from tqdm import tqdm  # noqa: E402
 
+from escher_poker.chart_titles import set_chart_title  # noqa: E402
 from escher_poker.constants import (  # noqa: E402
     AVERAGE_POLICY_VALUE_TARGET_LABEL,
     LEDUC_GAME_VALUE_PLAYER_0,
@@ -497,7 +498,7 @@ def _plot_curve(
         )
     ax.set_xlabel(x_col.replace("_", " ").title())
     ax.set_ylabel(ylabel)
-    ax.set_title(title)
+    set_chart_title(ax, title)
     ax.grid(True, alpha=0.3)
     ax.legend()
     fig.tight_layout()
@@ -547,7 +548,7 @@ def _plot_bar(
         )
         ax.legend()
     ax.set_ylabel(ylabel)
-    ax.set_title(title)
+    set_chart_title(ax, title)
     ax.grid(True, axis="y", alpha=0.3)
     ax.tick_params(axis="x", rotation=20)
     fig.tight_layout()
@@ -570,7 +571,7 @@ def _plot_paired_delta(paired_rows: List[Dict[str, Any]], run_dir: Path) -> None
     )
     ax.set_xlabel("Seed")
     ax.set_ylabel("On-policy - baseline final exploitability")
-    ax.set_title("Paired effect of on-policy joint regret updates")
+    set_chart_title(ax, "Paired effect of on-policy joint regret updates")
     ax.grid(True, alpha=0.3)
     fig.tight_layout()
     fig.savefig(

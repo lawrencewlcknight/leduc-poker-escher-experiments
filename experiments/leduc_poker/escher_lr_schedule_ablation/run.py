@@ -32,6 +32,7 @@ from open_spiel.python import policy  # noqa: E402
 from open_spiel.python.algorithms import exploitability, expected_game_score  # noqa: E402
 from tqdm import tqdm  # noqa: E402
 
+from escher_poker.chart_titles import set_chart_title  # noqa: E402
 from escher_poker.constants import (  # noqa: E402
     AVERAGE_POLICY_VALUE_TARGET_LABEL,
     LEDUC_GAME_VALUE_PLAYER_0,
@@ -533,7 +534,7 @@ def _plot_curve_by_schedule(
         )
     ax.set_xlabel(x_col.replace("_", " ").title())
     ax.set_ylabel(ylabel)
-    ax.set_title(title)
+    set_chart_title(ax, title)
     ax.grid(True, alpha=0.3)
     ax.legend()
     fig.tight_layout()
@@ -586,7 +587,7 @@ def _plot_summary_bars(
         )
         ax.legend()
     ax.set_ylabel(ylabel)
-    ax.set_title(title)
+    set_chart_title(ax, title)
     ax.grid(True, axis="y", alpha=0.3)
     ax.tick_params(axis="x", rotation=20)
     fig.tight_layout()
@@ -618,7 +619,7 @@ def _plot_paired_bars(
     ax.bar(labels, means, yerr=errors, capsize=4)
     ax.axhline(0.0, linewidth=1, linestyle="--")
     ax.set_ylabel(ylabel)
-    ax.set_title(title)
+    set_chart_title(ax, title)
     ax.grid(True, axis="y", alpha=0.3)
     ax.tick_params(axis="x", rotation=20)
     fig.tight_layout()
@@ -652,7 +653,7 @@ def _plot_outputs(
         )
     ax.set_xlabel("Training iteration")
     ax.set_ylabel("Learning rate")
-    ax.set_title("ESCHER learning-rate schedules")
+    set_chart_title(ax, "ESCHER learning-rate schedules")
     ax.grid(True, alpha=0.3)
     ax.legend()
     fig.tight_layout()

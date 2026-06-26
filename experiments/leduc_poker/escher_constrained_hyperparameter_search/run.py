@@ -29,6 +29,7 @@ import pyspiel  # noqa: E402
 import tensorflow as tf  # noqa: E402
 from tqdm import tqdm  # noqa: E402
 
+from escher_poker.chart_titles import set_chart_title  # noqa: E402
 from escher_poker.constants import (  # noqa: E402
     AVERAGE_POLICY_VALUE_TARGET_LABEL,
     LEDUC_GAME_VALUE_PLAYER_0,
@@ -522,7 +523,7 @@ def _plot_stage_curves(results: List[Dict[str, Any]], stage_name: str, run_dir: 
     )
     ax.set_xlabel("Training iteration")
     ax.set_ylabel("Exploitability (NashConv/2)")
-    ax.set_title(f"ESCHER Hyperparameter Search: {stage_name.title()} Exploitability")
+    set_chart_title(ax, f"ESCHER Hyperparameter Search: {stage_name.title()} Exploitability")
     ax.grid(True)
     ax.legend(fontsize=8)
     fig.tight_layout()
@@ -543,7 +544,7 @@ def _plot_stage_curves(results: List[Dict[str, Any]], stage_name: str, run_dir: 
     )
     ax.set_xlabel("Nodes touched")
     ax.set_ylabel("Exploitability (NashConv/2)")
-    ax.set_title(f"ESCHER Hyperparameter Search: {stage_name.title()} Exploitability by Nodes")
+    set_chart_title(ax, f"ESCHER Hyperparameter Search: {stage_name.title()} Exploitability by Nodes")
     ax.grid(True)
     ax.legend(fontsize=8)
     fig.tight_layout()
@@ -565,7 +566,7 @@ def _plot_stage_curves(results: List[Dict[str, Any]], stage_name: str, run_dir: 
     )
     ax.set_xlabel("Training iteration")
     ax.set_ylabel("Average policy value")
-    ax.set_title(f"ESCHER Hyperparameter Search: {stage_name.title()} Average Policy Value")
+    set_chart_title(ax, f"ESCHER Hyperparameter Search: {stage_name.title()} Average Policy Value")
     ax.grid(True)
     ax.legend(fontsize=8)
     fig.tight_layout()
@@ -586,7 +587,7 @@ def _plot_stage_curves(results: List[Dict[str, Any]], stage_name: str, run_dir: 
     )
     ax.set_xlabel("Nodes touched")
     ax.set_ylabel("Average policy value")
-    ax.set_title(f"ESCHER Hyperparameter Search: {stage_name.title()} Average Policy Value by Nodes")
+    set_chart_title(ax, f"ESCHER Hyperparameter Search: {stage_name.title()} Average Policy Value by Nodes")
     ax.grid(True)
     ax.legend(fontsize=8)
     fig.tight_layout()
@@ -629,7 +630,7 @@ def _plot_final_metric_bars(
         ax.legend(fontsize=8)
     ax.set_ylabel(ylabel)
     ax.set_xlabel("Variant")
-    ax.set_title(f"ESCHER Hyperparameter Search: {stage_name.title()} {ylabel}")
+    set_chart_title(ax, f"ESCHER Hyperparameter Search: {stage_name.title()} {ylabel}")
     ax.grid(True, axis="y")
     ax.tick_params(axis="x", rotation=45)
     fig.tight_layout()

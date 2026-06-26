@@ -30,6 +30,7 @@ import pyspiel  # noqa: E402
 import tensorflow as tf  # noqa: E402
 from tqdm import tqdm  # noqa: E402
 
+from escher_poker.chart_titles import set_chart_title  # noqa: E402
 from escher_poker.constants import (  # noqa: E402
     AVERAGE_POLICY_VALUE_TARGET_LABEL,
     LEDUC_GAME_VALUE_PLAYER_0,
@@ -647,7 +648,7 @@ def _plot_arm_curves(
         )
     ax.set_xlabel(x_col.replace("_", " ").title())
     ax.set_ylabel(ylabel)
-    ax.set_title(title)
+    set_chart_title(ax, title)
     ax.grid(True, alpha=0.3)
     ax.legend()
     fig.tight_layout()
@@ -701,7 +702,7 @@ def _plot_paired_curves(
     )
     ax.set_xlabel("Training iteration")
     ax.set_ylabel("Warm-start exploitability - baseline exploitability")
-    ax.set_title("ESCHER warm-start ablation: paired exploitability difference")
+    set_chart_title(ax, "ESCHER warm-start ablation: paired exploitability difference")
     ax.grid(True, alpha=0.3)
     ax.legend()
     fig.tight_layout()
@@ -732,7 +733,7 @@ def _plot_paired_summary(paired_rows: List[Dict[str, Any]], run_dir: Path) -> No
     )
     ax.axhline(0.0, linestyle="--", linewidth=1)
     ax.set_ylabel("Warm-start - baseline")
-    ax.set_title("ESCHER warm-start ablation: mean paired differences")
+    set_chart_title(ax, "ESCHER warm-start ablation: mean paired differences")
     ax.grid(True, axis="y", alpha=0.3)
     fig.tight_layout()
     fig.savefig(

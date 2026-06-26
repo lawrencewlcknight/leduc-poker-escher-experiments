@@ -8,6 +8,7 @@ from typing import Any, Dict, List
 import matplotlib.pyplot as plt
 import numpy as np
 
+from .chart_titles import set_chart_title
 from .constants import (
     AVERAGE_POLICY_VALUE_TARGET_LABEL,
     LEDUC_AVERAGE_POLICY_VALUE_TARGET,
@@ -51,7 +52,7 @@ def plot_heatmap(
     ax.set_yticklabels(row_labels)
     ax.set_xlabel("Column checkpoint")
     ax.set_ylabel("Row checkpoint")
-    ax.set_title(title)
+    set_chart_title(ax, title)
     fig.colorbar(image, ax=ax, label=colorbar_label)
 
     if annotate:
@@ -108,7 +109,7 @@ def plot_checkpoint_training_summary(
         )
         ax.set_xlabel("Checkpoint iteration")
         ax.set_ylabel("Exploitability (NashConv/2)")
-        ax.set_title("Leduc Poker ESCHER: Checkpoint Exploitability")
+        set_chart_title(ax, "Leduc Poker ESCHER: Checkpoint Exploitability")
         ax.grid(True, alpha=0.3)
         ax.legend()
         fig.tight_layout()
@@ -142,7 +143,7 @@ def plot_checkpoint_training_summary(
         )
         ax.set_xlabel("Checkpoint iteration")
         ax.set_ylabel("Average policy value")
-        ax.set_title("Leduc Poker ESCHER: Checkpoint Average Policy Value")
+        set_chart_title(ax, "Leduc Poker ESCHER: Checkpoint Average Policy Value")
         ax.grid(True, alpha=0.3)
         ax.legend()
         fig.tight_layout()
@@ -175,7 +176,7 @@ def plot_checkpoint_training_summary(
             ax.bar([str(row["seed"]) for row in paired], [row["delta"] for row in paired])
             ax.set_xlabel("Seed")
             ax.set_ylabel("Delta exploitability\n(checkpointed final - continuous baseline)")
-            ax.set_title("Final Checkpointed ESCHER versus Continuous Baseline")
+            set_chart_title(ax, "Final Checkpointed ESCHER versus Continuous Baseline")
             ax.tick_params(axis="x", rotation=45)
             ax.grid(True, axis="y", alpha=0.3)
             fig.tight_layout()
@@ -241,7 +242,7 @@ def plot_checkpoint_head_to_head_outputs(
         ax.axhline(0.0, linestyle="--", linewidth=1)
         ax.set_xlabel("Checkpoint iteration")
         ax.set_ylabel("Mean EV vs earlier checkpoints")
-        ax.set_title("Does later ESCHER training improve head-to-head performance?")
+        set_chart_title(ax, "Does later ESCHER training improve head-to-head performance?")
         ax.grid(True, alpha=0.3)
         fig.tight_layout()
         fig.savefig(run_dir / "head_to_head_strength_vs_earlier_aggregate.png", dpi=200, bbox_inches="tight")
@@ -254,7 +255,7 @@ def plot_checkpoint_head_to_head_outputs(
         ax.axhline(0.0, linestyle="--", linewidth=1)
         ax.set_xlabel("Checkpoint iteration")
         ax.set_ylabel("EV vs immediately previous checkpoint")
-        ax.set_title("Adjacent ESCHER checkpoint improvement")
+        set_chart_title(ax, "Adjacent ESCHER checkpoint improvement")
         ax.grid(True, alpha=0.3)
         fig.tight_layout()
         fig.savefig(
@@ -276,7 +277,7 @@ def plot_checkpoint_head_to_head_outputs(
         )
         ax.set_xlabel("Checkpoint iteration")
         ax.set_ylabel("Exploitability")
-        ax.set_title("ESCHER checkpoint exploitability over training")
+        set_chart_title(ax, "ESCHER checkpoint exploitability over training")
         ax.grid(True, alpha=0.3)
         ax.legend()
         fig.tight_layout()
@@ -295,7 +296,7 @@ def plot_checkpoint_head_to_head_outputs(
         )
         ax.set_xlabel("Checkpoint iteration")
         ax.set_ylabel("Average policy value")
-        ax.set_title("ESCHER checkpoint average policy value over training")
+        set_chart_title(ax, "ESCHER checkpoint average policy value over training")
         ax.grid(True, alpha=0.3)
         ax.legend()
         fig.tight_layout()
@@ -312,7 +313,7 @@ def plot_checkpoint_head_to_head_outputs(
         ax.axhline(0.0, linestyle="--", linewidth=1)
         ax.set_xlabel("Exploitability")
         ax.set_ylabel("Mean EV vs all other checkpoints")
-        ax.set_title("ESCHER equilibrium quality versus head-to-head strength")
+        set_chart_title(ax, "ESCHER equilibrium quality versus head-to-head strength")
         ax.grid(True, alpha=0.3)
         fig.tight_layout()
         fig.savefig(run_dir / "exploitability_vs_head_to_head_strength.png", dpi=200, bbox_inches="tight")
@@ -328,7 +329,7 @@ def plot_checkpoint_head_to_head_outputs(
         )
         ax.set_xlabel("Seed")
         ax.set_ylabel("Delta exploitability\n(final checkpointed - continuous baseline)")
-        ax.set_title("Final ESCHER checkpoint versus continuous baseline")
+        set_chart_title(ax, "Final ESCHER checkpoint versus continuous baseline")
         ax.tick_params(axis="x", rotation=45)
         ax.grid(True, axis="y", alpha=0.3)
         fig.tight_layout()

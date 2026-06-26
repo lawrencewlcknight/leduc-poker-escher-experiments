@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from scipy import stats
 
+from .chart_titles import set_chart_title
 from .constants import (
     AVERAGE_POLICY_VALUE_TARGET_LABEL,
     LEDUC_AVERAGE_POLICY_VALUE_TARGET,
@@ -67,7 +68,7 @@ def plot_multiseed_results(
     )
     ax.set_xlabel("Training iteration")
     ax.set_ylabel("Exploitability (NashConv/2)")
-    ax.set_title("Leduc Poker ESCHER: Exploitability Across Seeds")
+    set_chart_title(ax, "Leduc Poker ESCHER: Exploitability Across Seeds")
     ax.grid(True)
     ax.legend()
     fig.tight_layout()
@@ -92,7 +93,7 @@ def plot_multiseed_results(
     )
     ax.set_xlabel("Training iteration")
     ax.set_ylabel("Average policy value")
-    ax.set_title("Leduc Poker ESCHER: Average Policy Value Across Seeds")
+    set_chart_title(ax, "Leduc Poker ESCHER: Average Policy Value Across Seeds")
     ax.grid(True)
     ax.legend()
     fig.tight_layout()
@@ -117,7 +118,7 @@ def plot_multiseed_results(
     )
     ax.set_xlabel("Nodes touched")
     ax.set_ylabel("Exploitability (NashConv/2)")
-    ax.set_title("Leduc Poker ESCHER: Exploitability by Nodes Touched")
+    set_chart_title(ax, "Leduc Poker ESCHER: Exploitability by Nodes Touched")
     ax.grid(True)
     ax.legend()
     fig.tight_layout()
@@ -142,7 +143,7 @@ def plot_multiseed_results(
     )
     ax.set_xlabel("Nodes touched")
     ax.set_ylabel("Average policy value")
-    ax.set_title("Leduc Poker ESCHER: Average Policy Value by Nodes Touched")
+    set_chart_title(ax, "Leduc Poker ESCHER: Average Policy Value by Nodes Touched")
     ax.grid(True)
     ax.legend()
     fig.tight_layout()
@@ -162,7 +163,7 @@ def plot_multiseed_results(
     )
     ax.set_xlabel("Training iteration")
     ax.set_ylabel(r"$|v(\sigma) - v^*_{\mathrm{Leduc}}|$")
-    ax.set_title("Leduc Poker ESCHER: Policy-Value Error")
+    set_chart_title(ax, "Leduc Poker ESCHER: Policy-Value Error")
     ax.grid(True)
     ax.legend()
     fig.tight_layout()
@@ -191,7 +192,7 @@ def plot_diagnostics(results: List[Dict[str, Any]], run_dir: str | Path) -> None
         )
     ax.set_xlabel("Training iteration")
     ax.set_ylabel("MSE loss")
-    ax.set_title("ESCHER Average-Policy Network Loss Diagnostic")
+    set_chart_title(ax, "ESCHER Average-Policy Network Loss Diagnostic")
     ax.grid(True)
     ax.legend()
     fig.tight_layout()
@@ -203,7 +204,7 @@ def plot_diagnostics(results: List[Dict[str, Any]], run_dir: str | Path) -> None
     ax.plot(iterations, np.nanmean(regret_loss_p1_mat, axis=0), linewidth=2, label="Regret loss P1")
     ax.set_xlabel("Training iteration")
     ax.set_ylabel("MSE loss")
-    ax.set_title("ESCHER Regret-Network Loss Diagnostic")
+    set_chart_title(ax, "ESCHER Regret-Network Loss Diagnostic")
     ax.grid(True)
     ax.legend()
     fig.tight_layout()
@@ -215,7 +216,7 @@ def plot_diagnostics(results: List[Dict[str, Any]], run_dir: str | Path) -> None
     ax.plot(iterations, np.nanmean(value_test_loss_mat, axis=0), linewidth=2, label="Value test loss")
     ax.set_xlabel("Training iteration")
     ax.set_ylabel("MSE loss")
-    ax.set_title("ESCHER History-Value Network Loss Diagnostic")
+    set_chart_title(ax, "ESCHER History-Value Network Loss Diagnostic")
     ax.grid(True)
     ax.legend()
     fig.tight_layout()
