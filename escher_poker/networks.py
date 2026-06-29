@@ -83,6 +83,42 @@ class ActionHeadLayer(tf.keras.layers.Layer):
         return tf.concat([head(x) for head in self.heads], axis=-1)
 
 
+class ScalarHeadLayer(tf.keras.layers.Layer):
+    """Shallow scalar MLP head after a shared trunk."""
+
+    def __init__(
+        self,
+        *,
+        head_depth: int,
+        head_units: int,
+        activation: str,
+        **kwargs,
+    ):
+        super().__init__(**kwargs)
+        layers = []
+        for _ in range(int(head_depth)):
+            layers.append(
+                tf.keras.layers.Dense(
+                    int(head_units), kernel_initializer="he_normal"
+                )
+            )
+            layers.append(_make_activation(activation))
+        layers.append(tf.keras.layers.Dense(1))
+        self.head = tf.keras.Sequential(layers)
+
+    def call(self, x):
+        return self.head(x)
+
+
+def _center_legal_outputs(values, mask):
+    """Centre action outputs over legal actions and keep illegal actions zero."""
+    mask = tf.cast(mask, values.dtype)
+    legal_count = tf.reduce_sum(mask, axis=-1, keepdims=True)
+    safe_count = tf.maximum(legal_count, tf.ones_like(legal_count))
+    legal_mean = tf.reduce_sum(values * mask, axis=-1, keepdims=True) / safe_count
+    return mask * (values - legal_mean)
+
+
 def _make_hidden_layer(units: int, prev_units: int, residual_mode: str):
     residual_mode = str(residual_mode).lower()
     if residual_mode in {"same_width", "auto"} and prev_units == units:
@@ -169,6 +205,7 @@ class RegretNetwork(tf.keras.Model):
         residual_mode="same_width",
         head_depth=0,
         head_units=None,
+        output_mode="direct",
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -178,6 +215,13 @@ class RegretNetwork(tf.keras.Model):
         regret_network_layers = tuple(regret_network_layers)
         if not regret_network_layers:
             raise ValueError("regret_network_layers must contain at least one layer")
+        valid_output_modes = {"direct", "centered", "dueling"}
+        self._output_mode = str(output_mode).lower()
+        if self._output_mode not in valid_output_modes:
+            raise ValueError(
+                f"Unsupported regret output_mode: {output_mode!r}. "
+                f"Expected one of {sorted(valid_output_modes)}."
+            )
 
         self.hidden = []
         prev_units = 0
@@ -197,8 +241,14 @@ class RegretNetwork(tf.keras.Model):
                 head_units=int(head_units or regret_network_layers[-1]),
                 activation=activation,
             )
+            self.state_value_layer = ScalarHeadLayer(
+                head_depth=int(head_depth),
+                head_units=int(head_units or regret_network_layers[-1]),
+                activation=activation,
+            )
         else:
             self.out_layer = tf.keras.layers.Dense(num_actions)
+            self.state_value_layer = tf.keras.layers.Dense(1)
 
     @tf.function
     def call(self, inputs):
@@ -210,8 +260,14 @@ class RegretNetwork(tf.keras.Model):
             x = self.normalization(x)
         x = self.lastlayer(x)
         x = self.activation(x)
-        x = self.out_layer(x)
-        return mask * x
+        action_values = self.out_layer(x)
+        if self._output_mode == "direct":
+            return mask * action_values
+        centred_actions = _center_legal_outputs(action_values, mask)
+        if self._output_mode == "centered":
+            return centred_actions
+        state_value = self.state_value_layer(x)
+        return mask * state_value + centred_actions
 
 
 class ValueNetwork(tf.keras.Model):

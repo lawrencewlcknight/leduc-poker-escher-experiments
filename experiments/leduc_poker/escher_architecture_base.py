@@ -28,5 +28,6 @@ def make_default_config(experiment_name: str):
         "regret_network_head_depth": 0,
         "policy_network_head_units": None,
         "regret_network_head_units": None,
+        "regret_network_output_mode": "direct",
     })
     return config

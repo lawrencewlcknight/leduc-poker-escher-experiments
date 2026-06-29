@@ -82,6 +82,7 @@ SUMMARY_HP_FIELDS = [
     "regret_network_head_depth",
     "policy_network_head_units",
     "regret_network_head_units",
+    "regret_network_output_mode",
     "regret_target_processing",
     "regret_target_clip_value",
     "regret_target_standardize_epsilon",

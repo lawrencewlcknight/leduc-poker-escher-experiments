@@ -125,6 +125,9 @@ def make_escher_solver(
         regret_network_head_depth=int(config.get("regret_network_head_depth", 0)),
         policy_network_head_units=config.get("policy_network_head_units"),
         regret_network_head_units=config.get("regret_network_head_units"),
+        regret_network_output_mode=str(
+            config.get("regret_network_output_mode", "direct")
+        ),
         regret_target_processing=str(config.get("regret_target_processing", "none")),
         regret_target_clip_value=float(config.get("regret_target_clip_value", 1.0)),
         regret_target_standardize_epsilon=float(

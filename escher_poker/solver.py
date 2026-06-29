@@ -97,6 +97,7 @@ class ESCHERSolver(policy.Policy):
                  regret_network_head_depth: int = 0,
                  policy_network_head_units: int = None,
                  regret_network_head_units: int = None,
+                 regret_network_output_mode: str = "direct",
                  regret_target_processing: str = "none",
                  regret_target_clip_value: float = 1.0,
                  regret_target_standardize_epsilon: float = 1e-6,
@@ -136,6 +137,10 @@ class ESCHERSolver(policy.Policy):
             Replay buffers always retain raw regret targets. Supported values
             are ``"none"``, ``"standardize"``, ``"clip"``, and
             ``"standardize_clip"``.
+          regret_network_output_mode: Regret-network output head structure.
+            ``"direct"`` keeps the current action outputs, ``"centered"``
+            centres action outputs over legal actions, and ``"dueling"`` adds
+            a scalar state-value head to centred legal-action outputs.
           regret_target_clip_value: Symmetric clipping threshold for
             regret-target processing modes that include clipping.
           regret_target_standardize_epsilon: Minimum standard deviation used
@@ -182,6 +187,14 @@ class ESCHERSolver(policy.Policy):
         self._regret_network_head_depth = int(regret_network_head_depth)
         self._policy_network_head_units = policy_network_head_units
         self._regret_network_head_units = regret_network_head_units
+        valid_regret_network_output_modes = {"direct", "centered", "dueling"}
+        self._regret_network_output_mode = str(regret_network_output_mode).lower()
+        if self._regret_network_output_mode not in valid_regret_network_output_modes:
+            raise ValueError(
+                "regret_network_output_mode must be one of "
+                f"{sorted(valid_regret_network_output_modes)}, got "
+                f"{regret_network_output_mode!r}."
+            )
         valid_regret_target_processing = {
             "none",
             "standardize",
@@ -358,7 +371,8 @@ class ESCHERSolver(policy.Policy):
                     use_layer_norm=self._regret_network_layer_norm,
                     residual_mode=self._regret_network_residual_mode,
                     head_depth=self._regret_network_head_depth,
-                    head_units=self._regret_network_head_units)
+                    head_units=self._regret_network_head_units,
+                    output_mode=self._regret_network_output_mode)
                 self._build_network_once(regret_network, self._embedding_size)
                 self._regret_networks.append(regret_network)
             with tf.device(self._train_device):
@@ -369,7 +383,8 @@ class ESCHERSolver(policy.Policy):
                     use_layer_norm=self._regret_network_layer_norm,
                     residual_mode=self._regret_network_residual_mode,
                     head_depth=self._regret_network_head_depth,
-                    head_units=self._regret_network_head_units)
+                    head_units=self._regret_network_head_units,
+                    output_mode=self._regret_network_output_mode)
                 self._build_network_once(regret_network_train, self._embedding_size)
                 self._regret_networks_train.append(regret_network_train)
                 self._loss_regrets.append(tf.keras.losses.MeanSquaredError())
@@ -428,7 +443,8 @@ class ESCHERSolver(policy.Policy):
                 use_layer_norm=self._regret_network_layer_norm,
                 residual_mode=self._regret_network_residual_mode,
                 head_depth=self._regret_network_head_depth,
-                head_units=self._regret_network_head_units)
+                head_units=self._regret_network_head_units,
+                output_mode=self._regret_network_output_mode)
             self._build_network_once(
                 self._regret_networks_train[player],
                 self._embedding_size,
@@ -2017,6 +2033,7 @@ class ESCHERSolver(policy.Policy):
             "meta": {
                 "num_players": int(self._num_players),
                 "num_actions": int(self._num_actions),
+                "regret_network_output_mode": self._regret_network_output_mode,
                 "regret_target_processing": self._regret_target_processing,
                 "regret_target_clip_value": float(self._regret_target_clip_value),
                 "regret_target_standardize_epsilon": float(

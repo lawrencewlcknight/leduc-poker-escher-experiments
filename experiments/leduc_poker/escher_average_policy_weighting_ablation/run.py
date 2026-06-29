@@ -74,6 +74,7 @@ SUMMARY_HP_FIELDS = [
     "regret_network_head_depth",
     "policy_network_head_units",
     "regret_network_head_units",
+    "regret_network_output_mode",
     "batch_size_regret",
     "batch_size_value",
     "batch_size_average_policy",

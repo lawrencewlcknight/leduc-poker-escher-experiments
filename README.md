@@ -88,7 +88,8 @@ The repository is organised so that each experiment can be run independently whi
 │       ├── escher_shared_trunk_head_sweep/           # Experiment 22
 │       ├── escher_regret_target_processing_ablation/ # Experiment 23
 │       ├── escher_action_head_residual_mlp_sweep/    # Experiment 24
-│       └── escher_average_policy_weighting_ablation/ # Experiment 25
+│       ├── escher_average_policy_weighting_ablation/ # Experiment 25
+│       └── escher_factorised_regret_head_ablation/   # Experiment 26
 ├── docs/
 │   └── OUTPUT_CONVENTIONS.md
 ├── notebooks/                                        # Original notebook archive
@@ -286,6 +287,20 @@ all other settings fixed.
 **Question:** does uniform average-policy regression weighting improve ESCHER
 exploitability relative to the carried-forward linear weighting baseline?
 
+### 26. ESCHER factorised regret-head ablation
+
+[`experiments/leduc_poker/escher_factorised_regret_head_ablation/`](experiments/leduc_poker/escher_factorised_regret_head_ablation/README.md)
+
+Tests the Deep CFR Experiment 16 factorised advantage-head idea in ESCHER. The
+baseline is the carried-forward ESCHER model with `(256, 128)` trunks, standard
+linear policy output, one 64-unit per-action regret head, the Experiment 13
+training protocol, no importance sampling, and uniform zero-regret fallback.
+Treatments centre legal-action regret outputs or use a dueling-style scalar
+state head plus centred legal-action deviations.
+
+**Question:** does factorising ESCHER's regret-output head improve
+exploitability relative to the direct per-action regret-head baseline?
+
 ## Setup
 
 Create and activate a Python 3.9 virtual environment. The repository contains
@@ -380,6 +395,9 @@ python -m experiments.leduc_poker.escher_action_head_residual_mlp_sweep.run
 
 # Experiment 25 — average-policy weighting ablation
 python -m experiments.leduc_poker.escher_average_policy_weighting_ablation.run
+
+# Experiment 26 — factorised regret-head ablation
+python -m experiments.leduc_poker.escher_factorised_regret_head_ablation.run
 ```
 
 For a quick smoke test:

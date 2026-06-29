@@ -17,6 +17,7 @@ CONFIG_MODULES = [
     "experiments.leduc_poker.escher_bottleneck_architecture_sweep.config",
     "experiments.leduc_poker.escher_shared_trunk_head_sweep.config",
     "experiments.leduc_poker.escher_action_head_residual_mlp_sweep.config",
+    "experiments.leduc_poker.escher_factorised_regret_head_ablation.config",
 ]
 
 
