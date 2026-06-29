@@ -89,7 +89,8 @@ The repository is organised so that each experiment can be run independently whi
 │       ├── escher_regret_target_processing_ablation/ # Experiment 23
 │       ├── escher_action_head_residual_mlp_sweep/    # Experiment 24
 │       ├── escher_average_policy_weighting_ablation/ # Experiment 25
-│       └── escher_factorised_regret_head_ablation/   # Experiment 26
+│       ├── escher_factorised_regret_head_ablation/   # Experiment 26
+│       └── escher_action_head_layer_norm_residual_ablation/ # Experiment 27
 ├── docs/
 │   └── OUTPUT_CONVENTIONS.md
 ├── notebooks/                                        # Original notebook archive
@@ -301,6 +302,21 @@ state head plus centred legal-action deviations.
 **Question:** does factorising ESCHER's regret-output head improve
 exploitability relative to the direct per-action regret-head baseline?
 
+### 27. ESCHER action-head LayerNorm/residual-LN ablation
+
+[`experiments/leduc_poker/escher_action_head_layer_norm_residual_ablation/`](experiments/leduc_poker/escher_action_head_layer_norm_residual_ablation/README.md)
+
+Tests the Deep CFR Experiment 13 layer-normalisation network hypothesis under
+the carried-forward ESCHER action-head model. The baseline is the confirmed
+`(256, 128)` trunk configuration with standard linear policy output, one
+64-unit per-action regret head, the Experiment 13 training protocol, no
+importance sampling, and uniform zero-regret fallback. Treatments compare a
+same-capacity plain trunk, a deeper plain trunk, a deeper LayerNorm trunk, and
+a deeper residual+LayerNorm trunk.
+
+**Question:** does layer normalisation or residual+LayerNorm trunk structure
+improve ESCHER exploitability once the regret action-head architecture is fixed?
+
 ## Setup
 
 Create and activate a Python 3.9 virtual environment. The repository contains
@@ -398,6 +414,9 @@ python -m experiments.leduc_poker.escher_average_policy_weighting_ablation.run
 
 # Experiment 26 — factorised regret-head ablation
 python -m experiments.leduc_poker.escher_factorised_regret_head_ablation.run
+
+# Experiment 27 — action-head LayerNorm/residual-LN ablation
+python -m experiments.leduc_poker.escher_action_head_layer_norm_residual_ablation.run
 ```
 
 For a quick smoke test:
