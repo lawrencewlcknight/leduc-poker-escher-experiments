@@ -86,7 +86,8 @@ The repository is organised so that each experiment can be run independently whi
 │       ├── escher_residual_mlp_sweep/                # Experiment 20
 │       ├── escher_bottleneck_architecture_sweep/     # Experiment 21
 │       ├── escher_shared_trunk_head_sweep/           # Experiment 22
-│       └── escher_regret_target_processing_ablation/ # Experiment 23
+│       ├── escher_regret_target_processing_ablation/ # Experiment 23
+│       └── escher_action_head_residual_mlp_sweep/    # Experiment 24
 ├── docs/
 │   └── OUTPUT_CONVENTIONS.md
 ├── notebooks/                                        # Original notebook archive
@@ -257,6 +258,19 @@ regret-target entries in the supervised regret-network loss.
 **Question:** can standardising or clipping sampled ESCHER regret targets reduce
 regret-network optimisation variance enough to improve exploitability?
 
+### 24. ESCHER action-head residual-MLP sweep
+
+[`experiments/leduc_poker/escher_action_head_residual_mlp_sweep/`](experiments/leduc_poker/escher_action_head_residual_mlp_sweep/README.md)
+
+Revisits the residual-network hypothesis after the Experiment 22 regret-action
+head improvement. The baseline is the carried-forward ESCHER model with
+`(256, 128)` trunks and one 64-unit per-action regret head. Treatments add
+deeper plain trunks, same-width residual trunks, and projection-residual
+bottleneck trunks while keeping the regret action heads fixed.
+
+**Question:** do residual trunk connections still improve ESCHER exploitability
+once the regret-output architecture has been strengthened?
+
 ## Setup
 
 Create and activate a Python 3.9 virtual environment. The repository contains
@@ -345,6 +359,9 @@ python -m experiments.leduc_poker.escher_shared_trunk_head_sweep.run
 
 # Experiment 23 — regret-target processing ablation
 python -m experiments.leduc_poker.escher_regret_target_processing_ablation.run
+
+# Experiment 24 — action-head residual-MLP sweep
+python -m experiments.leduc_poker.escher_action_head_residual_mlp_sweep.run
 ```
 
 For a quick smoke test:
