@@ -85,7 +85,8 @@ The repository is organised so that each experiment can be run independently whi
 │       ├── escher_activation_sweep/                  # Experiment 19
 │       ├── escher_residual_mlp_sweep/                # Experiment 20
 │       ├── escher_bottleneck_architecture_sweep/     # Experiment 21
-│       └── escher_shared_trunk_head_sweep/           # Experiment 22
+│       ├── escher_shared_trunk_head_sweep/           # Experiment 22
+│       └── escher_regret_target_processing_ablation/ # Experiment 23
 ├── docs/
 │   └── OUTPUT_CONVENTIONS.md
 ├── notebooks/                                        # Original notebook archive
@@ -243,6 +244,19 @@ specific neural-network design choices under the Experiment 13 training budget:
 **Question:** which network-design choices most improve ESCHER's exploitability
 convergence once the stronger Experiment 13 training protocol is fixed?
 
+### 23. ESCHER regret-target processing ablation
+
+[`experiments/leduc_poker/escher_regret_target_processing_ablation/`](experiments/leduc_poker/escher_regret_target_processing_ablation/README.md)
+
+Tests the Deep CFR Experiment 9 target-processing idea in the ESCHER regret
+pathway. The baseline is the carried-forward Experiment 13 protocol plus the
+Experiment 22 regret-only action-head architecture. Replay stores raw regret
+targets in all variants; standardisation and clipping are applied only to legal
+regret-target entries in the supervised regret-network loss.
+
+**Question:** can standardising or clipping sampled ESCHER regret targets reduce
+regret-network optimisation variance enough to improve exploitability?
+
 ## Setup
 
 Create and activate a Python 3.9 virtual environment. The repository contains
@@ -328,6 +342,9 @@ python -m experiments.leduc_poker.escher_bottleneck_architecture_sweep.run
 
 # Experiment 22 — shared-trunk/action-head sweep
 python -m experiments.leduc_poker.escher_shared_trunk_head_sweep.run
+
+# Experiment 23 — regret-target processing ablation
+python -m experiments.leduc_poker.escher_regret_target_processing_ablation.run
 ```
 
 For a quick smoke test:

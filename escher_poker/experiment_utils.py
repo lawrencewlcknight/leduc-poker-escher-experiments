@@ -124,6 +124,11 @@ def make_escher_solver(
         regret_network_head_depth=int(config.get("regret_network_head_depth", 0)),
         policy_network_head_units=config.get("policy_network_head_units"),
         regret_network_head_units=config.get("regret_network_head_units"),
+        regret_target_processing=str(config.get("regret_target_processing", "none")),
+        regret_target_clip_value=float(config.get("regret_target_clip_value", 1.0)),
+        regret_target_standardize_epsilon=float(
+            config.get("regret_target_standardize_epsilon", 1e-6)
+        ),
     )
 
 
@@ -453,6 +458,18 @@ def run_single_seed_variant(
             "value_test_loss",
             "regret_loss_player_0",
             "regret_loss_player_1",
+            "raw_regret_target_variance_player_0",
+            "raw_regret_target_variance_player_1",
+            "processed_regret_target_variance_player_0",
+            "processed_regret_target_variance_player_1",
+            "processed_regret_target_abs_mean_player_0",
+            "processed_regret_target_abs_mean_player_1",
+            "regret_target_standardization_mean_player_0",
+            "regret_target_standardization_mean_player_1",
+            "regret_target_standardization_scale_player_0",
+            "regret_target_standardization_scale_player_1",
+            "regret_target_clip_fraction_player_0",
+            "regret_target_clip_fraction_player_1",
             "average_policy_buffer_size",
             "regret_buffer_size_player_0",
             "regret_buffer_size_player_1",

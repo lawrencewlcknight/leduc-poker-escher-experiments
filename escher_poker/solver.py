@@ -96,6 +96,9 @@ class ESCHERSolver(policy.Policy):
                  regret_network_head_depth: int = 0,
                  policy_network_head_units: int = None,
                  regret_network_head_units: int = None,
+                 regret_target_processing: str = "none",
+                 regret_target_clip_value: float = 1.0,
+                 regret_target_standardize_epsilon: float = 1e-6,
                  *args, **kwargs):
         """Initialize the ESCHER algorithm.
 
@@ -127,6 +130,15 @@ class ESCHERSolver(policy.Policy):
             disk-backed TFRecord shards instead of in-memory reservoir buffers.
           tfrecord_compression: Optional TFRecord compression type for
             disk-backed regret memory, for example ``"GZIP"``.
+          regret_target_processing: Optional preprocessing applied only to
+            sampled regret targets in the supervised regret-network loss.
+            Replay buffers always retain raw regret targets. Supported values
+            are ``"none"``, ``"standardize"``, ``"clip"``, and
+            ``"standardize_clip"``.
+          regret_target_clip_value: Symmetric clipping threshold for
+            regret-target processing modes that include clipping.
+          regret_target_standardize_epsilon: Minimum standard deviation used
+            when standardising a batch of regret targets.
           infer_device: device used for TF-operations in the traversal branch.
             Format is anything accepted by tf.device
           train_device: device used for TF-operations in the NN training steps.
@@ -165,7 +177,46 @@ class ESCHERSolver(policy.Policy):
         self._regret_network_head_depth = int(regret_network_head_depth)
         self._policy_network_head_units = policy_network_head_units
         self._regret_network_head_units = regret_network_head_units
+        valid_regret_target_processing = {
+            "none",
+            "standardize",
+            "clip",
+            "standardize_clip",
+        }
+        self._regret_target_processing = str(regret_target_processing).lower()
+        if self._regret_target_processing not in valid_regret_target_processing:
+            raise ValueError(
+                "regret_target_processing must be one of "
+                f"{sorted(valid_regret_target_processing)}, got "
+                f"{regret_target_processing!r}."
+            )
+        self._regret_target_clip_value = float(regret_target_clip_value)
+        if self._regret_target_clip_value <= 0.0:
+            raise ValueError("regret_target_clip_value must be positive.")
+        self._regret_target_standardize_epsilon = float(
+            regret_target_standardize_epsilon
+        )
+        if self._regret_target_standardize_epsilon <= 0.0:
+            raise ValueError("regret_target_standardize_epsilon must be positive.")
         self._num_players = game.num_players()
+        self._last_raw_regret_target_variance = [
+            np.nan for _ in range(self._num_players)
+        ]
+        self._last_processed_regret_target_variance = [
+            np.nan for _ in range(self._num_players)
+        ]
+        self._last_processed_regret_target_abs_mean = [
+            np.nan for _ in range(self._num_players)
+        ]
+        self._last_regret_target_standardization_mean = [
+            np.nan for _ in range(self._num_players)
+        ]
+        self._last_regret_target_standardization_scale = [
+            np.nan for _ in range(self._num_players)
+        ]
+        self._last_regret_target_clip_fraction = [
+            np.nan for _ in range(self._num_players)
+        ]
         self._root_node = self._game.new_initial_state()
         self._embedding_size = len(self._root_node.information_state_tensor(0))
         hist_state = np.append(self._root_node.information_state_tensor(0),
@@ -959,6 +1010,18 @@ class ESCHERSolver(policy.Policy):
                         diagnostics["regret_storage_bytes_player_0"].append(int(self.get_regret_memory_storage_bytes(0)))
                         diagnostics["regret_storage_bytes_player_1"].append(int(self.get_regret_memory_storage_bytes(1)))
                         diagnostics["regret_storage_bytes_total"].append(int(self.get_regret_memory_storage_bytes()))
+                        diagnostics["raw_regret_target_variance_player_0"].append(float(self._last_raw_regret_target_variance[0]))
+                        diagnostics["raw_regret_target_variance_player_1"].append(float(self._last_raw_regret_target_variance[1]))
+                        diagnostics["processed_regret_target_variance_player_0"].append(float(self._last_processed_regret_target_variance[0]))
+                        diagnostics["processed_regret_target_variance_player_1"].append(float(self._last_processed_regret_target_variance[1]))
+                        diagnostics["processed_regret_target_abs_mean_player_0"].append(float(self._last_processed_regret_target_abs_mean[0]))
+                        diagnostics["processed_regret_target_abs_mean_player_1"].append(float(self._last_processed_regret_target_abs_mean[1]))
+                        diagnostics["regret_target_standardization_mean_player_0"].append(float(self._last_regret_target_standardization_mean[0]))
+                        diagnostics["regret_target_standardization_mean_player_1"].append(float(self._last_regret_target_standardization_mean[1]))
+                        diagnostics["regret_target_standardization_scale_player_0"].append(float(self._last_regret_target_standardization_scale[0]))
+                        diagnostics["regret_target_standardization_scale_player_1"].append(float(self._last_regret_target_standardization_scale[1]))
+                        diagnostics["regret_target_clip_fraction_player_0"].append(float(self._last_regret_target_clip_fraction[0]))
+                        diagnostics["regret_target_clip_fraction_player_1"].append(float(self._last_regret_target_clip_fraction[1]))
                         diagnostics["peak_rss_mb"].append(float(self._current_rss_mb()))
                         diagnostics["value_buffer_size"].append(int(len(self.get_value_memory())))
                         diagnostics["value_test_buffer_size"].append(int(len(self.get_value_memory_test())))
@@ -1622,19 +1685,109 @@ class ESCHERSolver(policy.Policy):
 
     def _get_regret_train_graph(self, player):
         """Return TF-Graph to perform regret network train step."""
+        processing = self._regret_target_processing
+        clip_value = tf.constant(self._regret_target_clip_value, dtype=tf.float32)
+        standardize_epsilon = tf.constant(
+            self._regret_target_standardize_epsilon,
+            dtype=tf.float32,
+        )
 
         @tf.function
         def train_step(info_states, regrets, iterations, masks, iteration):
             model = self._regret_networks_train[player]
+            target_mask = tf.cast(masks, tf.float32)
+            processed_regrets = tf.cast(regrets, tf.float32)
+            processed_regrets = tf.where(
+                target_mask > 0.0,
+                processed_regrets,
+                tf.zeros_like(processed_regrets),
+            )
+            legal_regrets = tf.boolean_mask(processed_regrets, target_mask > 0.0)
+
+            def safe_mean(values):
+                return tf.cond(
+                    tf.size(values) > 0,
+                    lambda: tf.reduce_mean(values),
+                    lambda: tf.constant(0.0, dtype=tf.float32),
+                )
+
+            def safe_variance(values):
+                return tf.cond(
+                    tf.size(values) > 0,
+                    lambda: tf.math.reduce_variance(values),
+                    lambda: tf.constant(0.0, dtype=tf.float32),
+                )
+
+            raw_variance = safe_variance(legal_regrets)
+            standardization_mean = tf.constant(0.0, dtype=tf.float32)
+            standardization_scale = tf.constant(1.0, dtype=tf.float32)
+            if processing in {"standardize", "standardize_clip"}:
+                standardization_mean = safe_mean(legal_regrets)
+                standardization_scale = tf.maximum(
+                    tf.sqrt(safe_variance(legal_regrets)),
+                    standardize_epsilon,
+                )
+                processed_regrets = (
+                    processed_regrets - standardization_mean
+                ) / standardization_scale
+                processed_regrets = tf.where(
+                    target_mask > 0.0,
+                    processed_regrets,
+                    tf.zeros_like(processed_regrets),
+                )
+
+            clip_fraction = tf.constant(0.0, dtype=tf.float32)
+            if processing in {"clip", "standardize_clip"}:
+                before_clip = processed_regrets
+                processed_regrets = tf.clip_by_value(
+                    processed_regrets,
+                    -clip_value,
+                    clip_value,
+                )
+                processed_regrets = tf.where(
+                    target_mask > 0.0,
+                    processed_regrets,
+                    tf.zeros_like(processed_regrets),
+                )
+                changed = tf.logical_and(
+                    target_mask > 0.0,
+                    tf.not_equal(before_clip, processed_regrets),
+                )
+                legal_count = tf.maximum(
+                    tf.reduce_sum(target_mask),
+                    tf.constant(1.0, dtype=tf.float32),
+                )
+                clip_fraction = (
+                    tf.reduce_sum(tf.cast(changed, tf.float32)) / legal_count
+                )
+
+            processed_legal_regrets = tf.boolean_mask(
+                processed_regrets,
+                target_mask > 0.0,
+            )
+            processed_variance = safe_variance(processed_legal_regrets)
+            processed_abs_mean = safe_mean(tf.abs(processed_legal_regrets))
             with tf.GradientTape() as tape:
                 preds = model((info_states, masks), training=True)
-                main_loss = self._loss_regrets[player](regrets, preds, sample_weight=iterations * 2 / iteration)
+                main_loss = self._loss_regrets[player](
+                    processed_regrets,
+                    preds,
+                    sample_weight=iterations * 2 / iteration,
+                )
                 loss = tf.add_n([main_loss], model.losses)
             gradients = tape.gradient(loss, model.trainable_variables)
             self._optimizer_regrets[player].apply_gradients(
                 zip(gradients, model.trainable_variables))
 
-            return main_loss
+            return (
+                main_loss,
+                raw_variance,
+                processed_variance,
+                processed_abs_mean,
+                standardization_mean,
+                standardization_scale,
+                clip_fraction,
+            )
 
         return train_step
 
@@ -1708,12 +1861,43 @@ class ESCHERSolver(policy.Policy):
         Returns:
           The average loss over the regret network of the last batch.
         """
+        def _to_float(value):
+            try:
+                return float(value.numpy())
+            except Exception:
+                return float(np.asarray(value))
 
         with tf.device(self._train_device):
             tfit = tf.constant(self._iteration, dtype=tf.float32)
             data = self._get_regret_dataset(player)
             for d in data.take(self._regret_network_train_steps):
-                main_loss = self._regret_train_step[player](*d, tfit)
+                (
+                    main_loss,
+                    raw_variance,
+                    processed_variance,
+                    processed_abs_mean,
+                    standardization_mean,
+                    standardization_scale,
+                    clip_fraction,
+                ) = self._regret_train_step[player](*d, tfit)
+                self._last_raw_regret_target_variance[player] = _to_float(
+                    raw_variance
+                )
+                self._last_processed_regret_target_variance[player] = _to_float(
+                    processed_variance
+                )
+                self._last_processed_regret_target_abs_mean[player] = _to_float(
+                    processed_abs_mean
+                )
+                self._last_regret_target_standardization_mean[player] = _to_float(
+                    standardization_mean
+                )
+                self._last_regret_target_standardization_scale[player] = _to_float(
+                    standardization_scale
+                )
+                self._last_regret_target_clip_fraction[player] = _to_float(
+                    clip_fraction
+                )
 
         self._regret_networks[player].set_weights(
             self._regret_networks_train[player].get_weights())
@@ -1814,6 +1998,11 @@ class ESCHERSolver(policy.Policy):
             "meta": {
                 "num_players": int(self._num_players),
                 "num_actions": int(self._num_actions),
+                "regret_target_processing": self._regret_target_processing,
+                "regret_target_clip_value": float(self._regret_target_clip_value),
+                "regret_target_standardize_epsilon": float(
+                    self._regret_target_standardize_epsilon
+                ),
             },
         }
         return ckpt
