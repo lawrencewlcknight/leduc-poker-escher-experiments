@@ -82,6 +82,7 @@ def make_escher_solver(
         use_reach_weighted_avg_policy_loss=bool(
             config.get("use_reach_weighted_avg_policy_loss", False)
         ),
+        average_policy_weighting=str(config.get("average_policy_weighting", "linear")),
         reuse_regret_traversals_for_value=bool(
             config.get("reuse_regret_traversals_for_value", False)
         ),

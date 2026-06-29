@@ -55,6 +55,7 @@ SUMMARY_HP_FIELDS = [
     "all_actions",
     "expl",
     "val_expl",
+    "average_policy_weighting",
     "policy_network_layers",
     "regret_network_layers",
     "value_network_layers",

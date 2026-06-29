@@ -78,6 +78,7 @@ class ESCHERSolver(policy.Policy):
                  random_policy_path=None,
                  verbose: bool = True,
                  use_reach_weighted_avg_policy_loss: bool = False,
+                 average_policy_weighting: str = "linear",
                  reuse_regret_traversals_for_value: bool = False,
                  on_policy_joint_regret_updates: bool = False,
                  value_test_traversals: int = 20,
@@ -139,6 +140,10 @@ class ESCHERSolver(policy.Policy):
             regret-target processing modes that include clipping.
           regret_target_standardize_epsilon: Minimum standard deviation used
             when standardising a batch of regret targets.
+          average_policy_weighting: Weighting scheme for supervised
+            average-policy regression samples. ``"linear"`` applies the
+            standard CFR iteration weighting; ``"uniform"`` gives each sampled
+            average-policy memory equal weight.
           infer_device: device used for TF-operations in the traversal branch.
             Format is anything accepted by tf.device
           train_device: device used for TF-operations in the NN training steps.
@@ -276,6 +281,14 @@ class ESCHERSolver(policy.Policy):
         self._use_reach_weighted_avg_policy_loss = bool(
             use_reach_weighted_avg_policy_loss
         )
+        valid_average_policy_weighting = {"linear", "uniform"}
+        self._average_policy_weighting = str(average_policy_weighting).lower()
+        if self._average_policy_weighting not in valid_average_policy_weighting:
+            raise ValueError(
+                "average_policy_weighting must be one of "
+                f"{sorted(valid_average_policy_weighting)}, got "
+                f"{average_policy_weighting!r}."
+            )
         self._reuse_regret_traversals_for_value = bool(
             reuse_regret_traversals_for_value
         )
@@ -1936,18 +1949,24 @@ class ESCHERSolver(policy.Policy):
             del obs_indices
             with tf.GradientTape() as tape:
                 preds = model((info_states, masks), training=True)
-                iter_weights = tf.squeeze(iterations, axis=-1) * (
-                    2.0 / tf.cast(self._iteration, tf.float32)
-                )
+                if self._average_policy_weighting == "linear":
+                    base_weights = tf.squeeze(iterations, axis=-1) * (
+                        2.0 / tf.cast(self._iteration, tf.float32)
+                    )
+                else:
+                    base_weights = tf.ones_like(
+                        tf.squeeze(iterations, axis=-1),
+                        dtype=tf.float32,
+                    )
                 if self._use_reach_weighted_avg_policy_loss:
                     reach_weights = tf.squeeze(reach_probs, axis=-1)
                     reach_weights = tf.clip_by_value(reach_weights, 1e-8, 1.0)
                     reach_weights = reach_weights / (
                         tf.reduce_mean(reach_weights) + 1e-8
                     )
-                    sample_weight = iter_weights * reach_weights
+                    sample_weight = base_weights * reach_weights
                 else:
-                    sample_weight = iter_weights
+                    sample_weight = base_weights
                 main_loss = self._loss_policy(
                     action_probs,
                     preds,
@@ -2003,6 +2022,7 @@ class ESCHERSolver(policy.Policy):
                 "regret_target_standardize_epsilon": float(
                     self._regret_target_standardize_epsilon
                 ),
+                "average_policy_weighting": self._average_policy_weighting,
             },
         }
         return ckpt
