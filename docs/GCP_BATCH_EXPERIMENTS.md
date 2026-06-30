@@ -250,6 +250,30 @@ queued, scheduled, running, or complete:
 gcloud batch jobs list --location "$REGION"
 ```
 
+To smoke-test the newer ESCHER experiments added after the architecture sweep,
+submit the recent-experiment smoke suite. This creates one Batch job that runs
+compact smoke settings for Experiments 23-27 sequentially after a single
+dependency installation:
+
+```bash
+./gcp/submit_recent_experiment_smoke_tests.sh
+```
+
+The suite covers:
+
+- Experiment 23: regret-target processing
+- Experiment 24: action-head residual MLP
+- Experiment 25: average-policy weighting
+- Experiment 26: factorised regret head
+- Experiment 27: action-head LayerNorm/residual-LN
+
+The helper accepts the same environment variables as
+`gcp/submit_batch_experiment.sh`; for example, set `MAX_RUN_SECONDS`,
+`MACHINE_TYPE`, `CPU_MILLI`, `MEMORY_MIB`, or `BOOT_DISK_SIZE_GB` before
+running it if the default smoke resources need adjustment. The smoke schedule
+can also be adjusted through `SMOKE_ITERATIONS`, `SMOKE_TRAVERSALS`,
+`SMOKE_VALUE_TRAVERSALS`, `SMOKE_BATCH_SIZE`, and related `SMOKE_*` variables.
+
 ---
 
 ## 8. Monitor a Batch job
@@ -575,6 +599,11 @@ Available ESCHER experiment modules:
 | 20. Residual-MLP sweep | `escher_residual_mlp_sweep` |
 | 21. Bottleneck architecture sweep | `escher_bottleneck_architecture_sweep` |
 | 22. Shared-trunk/action-head sweep | `escher_shared_trunk_head_sweep` |
+| 23. Regret-target processing ablation | `escher_regret_target_processing_ablation` |
+| 24. Action-head residual-MLP sweep | `escher_action_head_residual_mlp_sweep` |
+| 25. Average-policy weighting ablation | `escher_average_policy_weighting_ablation` |
+| 26. Factorised regret-head ablation | `escher_factorised_regret_head_ablation` |
+| 27. Action-head LayerNorm/residual-LN ablation | `escher_action_head_layer_norm_residual_ablation` |
 
 Example:
 
