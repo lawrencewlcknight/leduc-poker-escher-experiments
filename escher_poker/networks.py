@@ -241,14 +241,17 @@ class RegretNetwork(tf.keras.Model):
                 head_units=int(head_units or regret_network_layers[-1]),
                 activation=activation,
             )
-            self.state_value_layer = ScalarHeadLayer(
-                head_depth=int(head_depth),
-                head_units=int(head_units or regret_network_layers[-1]),
-                activation=activation,
-            )
         else:
             self.out_layer = tf.keras.layers.Dense(num_actions)
-            self.state_value_layer = tf.keras.layers.Dense(1)
+        if self._output_mode == "dueling":
+            if int(head_depth) > 0:
+                self.state_value_layer = ScalarHeadLayer(
+                    head_depth=int(head_depth),
+                    head_units=int(head_units or regret_network_layers[-1]),
+                    activation=activation,
+                )
+            else:
+                self.state_value_layer = tf.keras.layers.Dense(1)
 
     @tf.function
     def call(self, inputs):
