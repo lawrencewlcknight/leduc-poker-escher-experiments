@@ -9,9 +9,10 @@ import json
 import logging
 import os
 from pathlib import Path
+import subprocess
 import sys
 import traceback
-from typing import Dict, List, Mapping, Optional, Sequence
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Union
 
 os.environ.setdefault("CUDA_VISIBLE_DEVICES", "")
 os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
@@ -145,6 +146,29 @@ def _write_csv(path: Path, rows: Sequence[Mapping]) -> None:
         writer = csv.DictWriter(f, fieldnames=fields)
         writer.writeheader()
         writer.writerows(rows)
+
+
+def _write_json(path: Path, payload: Any) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(json_safe(payload), f, indent=2)
+
+
+def _append_jsonl(path: Path, payload: Any) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "a", encoding="utf-8") as f:
+        f.write(json.dumps(json_safe(payload), sort_keys=True))
+        f.write("\n")
+
+
+def _append_partial_result(run_dir: Path, result: Dict[str, Any]) -> None:
+    _append_jsonl(run_dir / "partial_variant_seed_summary.jsonl", result["summary"])
+    for row in result["curves"]:
+        _append_jsonl(run_dir / "partial_checkpoint_curves.jsonl", row)
+
+
+def _write_failures(run_dir: Path, failures: Sequence[Mapping]) -> None:
+    _write_json(run_dir / "failed_runs.json", list(failures))
 
 
 def _configure_logging(run_dir: Path, verbose: bool) -> None:
@@ -452,6 +476,89 @@ def _plot_curves(
         plt.close(fig)
 
 
+def _worker_stem(variant_id: str, seed: int) -> str:
+    return f"{variant_id}_seed_{int(seed)}"
+
+
+def _run_worker(
+    worker_input_json: Union[str, Path],
+    worker_output_json: Union[str, Path],
+) -> int:
+    input_path = Path(worker_input_json)
+    output_path = Path(worker_output_json)
+    with open(input_path, "r", encoding="utf-8") as f:
+        payload = json.load(f)
+
+    result = run_single_seed_variant(
+        int(payload["seed"]),
+        payload["config"],
+        export_dir=payload.get("export_dir"),
+    )
+    _write_json(output_path, result)
+    return 0
+
+
+def _run_seed_variant_subprocess(
+    seed: int,
+    config: Dict[str, Any],
+    run_dir: Path,
+) -> Dict[str, Any]:
+    stem = _worker_stem(str(config["variant_id"]), seed)
+    worker_input = run_dir / "worker_inputs" / f"{stem}.json"
+    worker_output = run_dir / "worker_results" / f"{stem}.json"
+    worker_log = run_dir / "worker_logs" / f"{stem}.log"
+
+    _write_json(worker_input, {
+        "seed": int(seed),
+        "config": config,
+        "export_dir": str(run_dir),
+    })
+
+    command = [
+        sys.executable,
+        "-m",
+        "experiments.leduc_poker.escher_regret_target_processing_ablation.run",
+        "--worker-input-json",
+        str(worker_input),
+        "--worker-output-json",
+        str(worker_output),
+    ]
+    env = os.environ.copy()
+    env.setdefault("PYTHONUNBUFFERED", "1")
+    worker_log.parent.mkdir(parents=True, exist_ok=True)
+    with open(worker_log, "w", encoding="utf-8") as log_file:
+        completed = subprocess.run(
+            command,
+            stdout=log_file,
+            stderr=subprocess.STDOUT,
+            text=True,
+            env=env,
+        )
+
+    if completed.returncode != 0:
+        raise RuntimeError(
+            f"Worker failed with exit code {completed.returncode}. "
+            f"See {worker_log} for details."
+        )
+    if not worker_output.exists():
+        raise RuntimeError(f"Worker completed without writing {worker_output}")
+
+    with open(worker_output, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def _run_seed_variant(
+    seed: int,
+    config: Dict[str, Any],
+    run_dir: Path,
+    *,
+    subprocess_isolation_enabled: bool,
+) -> Dict[str, Any]:
+    if subprocess_isolation_enabled:
+        return _run_seed_variant_subprocess(seed, config, run_dir)
+    return run_single_seed_variant(seed, config, export_dir=run_dir)
+
+
 def _build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Run the Leduc poker ESCHER regret-target processing ablation."
@@ -484,12 +591,30 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--save-final-checkpoints", type=_str2bool, default=None)
     parser.add_argument("--experiment-name", default=None)
     parser.add_argument("--continue-on-error", type=_str2bool, default=True)
+    parser.add_argument(
+        "--disable-subprocess-isolation",
+        action="store_true",
+        help=(
+            "Run all seed/variant arms in the parent process. By default each "
+            "arm runs in a fresh Python worker so TensorFlow state is released "
+            "between full ESCHER trainings."
+        ),
+    )
+    parser.add_argument("--worker-input-json", default=None, help=argparse.SUPPRESS)
+    parser.add_argument("--worker-output-json", default=None, help=argparse.SUPPRESS)
     parser.add_argument("--verbose", action="store_true")
     return parser
 
 
 def main(argv: Optional[List[str]] = None) -> int:
-    args = _build_arg_parser().parse_args(argv)
+    parser = _build_arg_parser()
+    args = parser.parse_args(argv)
+    if args.worker_input_json or args.worker_output_json:
+        if not args.worker_input_json or not args.worker_output_json:
+            parser.error("--worker-input-json and --worker-output-json must be used together")
+        return _run_worker(args.worker_input_json, args.worker_output_json)
+
+    subprocess_isolation_enabled = not args.disable_subprocess_isolation
     base_config = _build_base_config(args)
     seeds = _parse_seeds(args.seeds)
     variants = _selected_variants(args)
@@ -508,6 +633,13 @@ def main(argv: Optional[List[str]] = None) -> int:
         "selected_variant_ids": selected_ids,
         "baseline_variant_id": baseline_variant_id,
         "available_variants": list(VARIANTS),
+        "subprocess_isolation_enabled": bool(subprocess_isolation_enabled),
+        "incremental_outputs": {
+            "partial_variant_seed_summary_jsonl": "partial_variant_seed_summary.jsonl",
+            "partial_checkpoint_curves_jsonl": "partial_checkpoint_curves.jsonl",
+            "worker_results_dir": "worker_results",
+            "worker_logs_dir": "worker_logs",
+        },
     }
     with open(run_dir / "experiment_metadata.json", "w", encoding="utf-8") as f:
         json.dump(json_safe(metadata), f, indent=2)
@@ -516,6 +648,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     _LOGGER.info("Running seeds: %s", seeds)
     _LOGGER.info("Selected variants: %s", selected_ids)
     _LOGGER.info("Baseline variant: %s", baseline_variant_id)
+    _LOGGER.info("Subprocess isolation enabled: %s", subprocess_isolation_enabled)
 
     results = []
     failures = []
@@ -525,9 +658,15 @@ def main(argv: Optional[List[str]] = None) -> int:
             for variant in variants:
                 config = make_variant_config(base_config, variant)
                 try:
-                    result = run_single_seed_variant(seed, config, export_dir=run_dir)
+                    result = _run_seed_variant(
+                        seed,
+                        config,
+                        run_dir,
+                        subprocess_isolation_enabled=subprocess_isolation_enabled,
+                    )
                     result["summary"] = _augment_summary(result["summary"], config)
                     results.append(result)
+                    _append_partial_result(run_dir, result)
                     _LOGGER.info(
                         "%s seed %s final exploitability %.6f",
                         config["variant_id"],
@@ -548,6 +687,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                         seed,
                         exc,
                     )
+                    _write_failures(run_dir, failures)
                     if not args.continue_on_error:
                         break
                 finally:
@@ -557,8 +697,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 break
 
     if failures:
-        with open(run_dir / "failed_runs.json", "w", encoding="utf-8") as f:
-            json.dump(json_safe(failures), f, indent=2)
+        _write_failures(run_dir, failures)
 
     if not results:
         _LOGGER.error("No variants completed successfully.")

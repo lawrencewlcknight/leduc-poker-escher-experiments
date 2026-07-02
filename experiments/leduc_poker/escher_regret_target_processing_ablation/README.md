@@ -33,6 +33,16 @@ From the repository root:
 python -m experiments.leduc_poker.escher_regret_target_processing_ablation.run
 ```
 
+By default, each seed/variant arm is run sequentially in a fresh Python worker
+process. This keeps the command form unchanged while releasing TensorFlow
+solver, network, and replay-memory state between full ESCHER trainings. For
+local debugging only, this can be disabled:
+
+```bash
+python -m experiments.leduc_poker.escher_regret_target_processing_ablation.run \
+  --disable-subprocess-isolation
+```
+
 Quick smoke test:
 
 ```bash
@@ -73,6 +83,10 @@ Useful CLI options:
   baseline deltas.
 - `paired_difference_summary.json` aggregates paired differences and
   improvement fractions.
+- `worker_results/` and `worker_logs/` contain one isolated worker output and
+  log per seed/variant arm when subprocess isolation is enabled.
+- `partial_variant_seed_summary.jsonl` and `partial_checkpoint_curves.jsonl`
+  are appended after each completed arm.
 - PNG plots include final exploitability, exploitability by nodes touched,
   average-policy value by nodes touched, processed target variance, and
   clipping fraction.
