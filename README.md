@@ -237,14 +237,14 @@ width and depth?
 These single-seed diagnostic experiments extend Experiment 14 by isolating
 specific neural-network design choices under the Experiment 13 training budget:
 
-- [`escher_separate_network_architecture_sweep`](experiments/leduc_poker/escher_separate_network_architecture_sweep/README.md) varies relative capacity across the policy, regret, and value networks.
-- [`escher_regret_network_width_sweep`](experiments/leduc_poker/escher_regret_network_width_sweep/README.md) varies regret-network width while holding the other networks fixed.
-- [`escher_policy_network_width_sweep`](experiments/leduc_poker/escher_policy_network_width_sweep/README.md) varies average-policy-network width while holding the other networks fixed.
-- [`escher_layer_norm_ablation`](experiments/leduc_poker/escher_layer_norm_ablation/README.md) tests whether layer normalisation helps or hurts each network.
-- [`escher_activation_sweep`](experiments/leduc_poker/escher_activation_sweep/README.md) compares LeakyReLU, ReLU, ELU, GELU, Swish, and Tanh.
-- [`escher_residual_mlp_sweep`](experiments/leduc_poker/escher_residual_mlp_sweep/README.md) compares plain MLPs, same-width residual blocks, and projection residual blocks.
-- [`escher_bottleneck_architecture_sweep`](experiments/leduc_poker/escher_bottleneck_architecture_sweep/README.md) compares bottleneck, non-bottleneck, wide, and expanding MLP shapes.
-- [`escher_shared_trunk_head_sweep`](experiments/leduc_poker/escher_shared_trunk_head_sweep/README.md) compares the current shared trunk plus linear action-output layer with separate per-action heads.
+- **Experiment 15:** [`escher_separate_network_architecture_sweep`](experiments/leduc_poker/escher_separate_network_architecture_sweep/README.md) varies relative capacity across the policy, regret, and value networks.
+- **Experiment 16:** [`escher_regret_network_width_sweep`](experiments/leduc_poker/escher_regret_network_width_sweep/README.md) varies regret-network width while holding the other networks fixed.
+- **Experiment 17:** [`escher_policy_network_width_sweep`](experiments/leduc_poker/escher_policy_network_width_sweep/README.md) varies average-policy-network width while holding the other networks fixed.
+- **Experiment 18:** [`escher_layer_norm_ablation`](experiments/leduc_poker/escher_layer_norm_ablation/README.md) tests whether layer normalisation helps or hurts each network.
+- **Experiment 19:** [`escher_activation_sweep`](experiments/leduc_poker/escher_activation_sweep/README.md) compares LeakyReLU, ReLU, ELU, GELU, Swish, and Tanh.
+- **Experiment 20:** [`escher_residual_mlp_sweep`](experiments/leduc_poker/escher_residual_mlp_sweep/README.md) compares plain MLPs, same-width residual blocks, and projection residual blocks.
+- **Experiment 21:** [`escher_bottleneck_architecture_sweep`](experiments/leduc_poker/escher_bottleneck_architecture_sweep/README.md) compares bottleneck, non-bottleneck, wide, and expanding MLP shapes.
+- **Experiment 22:** [`escher_shared_trunk_head_sweep`](experiments/leduc_poker/escher_shared_trunk_head_sweep/README.md) compares the current shared trunk plus linear action-output layer with separate per-action heads.
 
 **Question:** which network-design choices most improve ESCHER's exploitability
 convergence once the stronger Experiment 13 training protocol is fixed?
@@ -437,162 +437,310 @@ python -m experiments.leduc_poker.escher_action_head_layer_norm_residual_ablatio
 python -m experiments.leduc_poker.escher_candidate_architecture_multiseed.run
 ```
 
-For a quick smoke test:
+For quick GCP smoke tests, first make sure the environment variables required
+by `gcp/submit_batch_experiment.sh` are set: `PROJECT_ID`, `REGION`, `BUCKET`,
+and `SA_EMAIL`. Then paste any of the following commands from the repository
+root. Each command submits a separate Google Batch job.
 
 ```bash
-python -m experiments.leduc_poker.escher_multiseed_baseline.run \
-  --seeds 1234,2025 \
-  --iterations 10 \
-  --traversals 50 \
-  --value-traversals 50 \
-  --policy-network-train-steps 20 \
-  --regret-network-train-steps 20 \
-  --value-network-train-steps 20 \
-  --evaluation-interval 5 \
-  --output-root outputs/smoke_tests
+# Experiment 1 smoke test
+./gcp/submit_batch_experiment.sh \
+  "escher-smoke-exp1-$(date +%Y%m%d-%H%M%S)" \
+  "/usr/bin/time -v python -m experiments.leduc_poker.escher_multiseed_baseline.run \
+    --seeds 1234,2025 \
+    --iterations 10 \
+    --traversals 50 \
+    --value-traversals 50 \
+    --policy-network-train-steps 20 \
+    --regret-network-train-steps 20 \
+    --value-network-train-steps 20 \
+    --evaluation-interval 5 \
+    --output-root outputs/cloud/escher-smoke-exp1" \
+  "n2-standard-4" "3600" "4000" "16000" "100"
 
-python -m experiments.leduc_poker.escher_intermediate_policy_training_ablation.run \
-  --seeds 1234 \
-  --iterations 10 \
-  --traversals 50 \
-  --value-traversals 50 \
-  --policy-network-train-steps 20 \
-  --regret-network-train-steps 20 \
-  --value-network-train-steps 20 \
-  --evaluation-interval 1 \
-  --output-root outputs/smoke_tests
+# Experiment 2 smoke test
+./gcp/submit_batch_experiment.sh \
+  "escher-smoke-exp2-$(date +%Y%m%d-%H%M%S)" \
+  "/usr/bin/time -v python -m experiments.leduc_poker.escher_intermediate_policy_training_ablation.run \
+    --seeds 1234 \
+    --iterations 10 \
+    --traversals 50 \
+    --value-traversals 50 \
+    --policy-network-train-steps 20 \
+    --regret-network-train-steps 20 \
+    --value-network-train-steps 20 \
+    --evaluation-interval 1 \
+    --output-root outputs/cloud/escher-smoke-exp2" \
+  "n2-standard-4" "3600" "4000" "16000" "100"
 
-python -m experiments.leduc_poker.escher_checkpoint_stability.run \
-  --seeds 1234 \
-  --checkpoint-schedule 1,2 \
-  --traversals 50 \
-  --value-traversals 50 \
-  --policy-network-train-steps 20 \
-  --regret-network-train-steps 20 \
-  --value-network-train-steps 20 \
-  --evaluation-interval 1 \
-  --output-root outputs/smoke_tests
+# Experiment 3 smoke test
+./gcp/submit_batch_experiment.sh \
+  "escher-smoke-exp3-$(date +%Y%m%d-%H%M%S)" \
+  "/usr/bin/time -v python -m experiments.leduc_poker.escher_checkpoint_stability.run \
+    --seeds 1234 \
+    --checkpoint-schedule 1,2 \
+    --traversals 50 \
+    --value-traversals 50 \
+    --policy-network-train-steps 20 \
+    --regret-network-train-steps 20 \
+    --value-network-train-steps 20 \
+    --evaluation-interval 1 \
+    --output-root outputs/cloud/escher-smoke-exp3" \
+  "n2-standard-4" "3600" "4000" "16000" "100"
 
-python -m experiments.leduc_poker.escher_constrained_hyperparameter_search.run \
-  --screening-seeds 1234 \
-  --confirmation-seeds 1234 \
-  --screening-iterations 2 \
-  --confirmation-iterations 2 \
-  --screening-evaluation-interval 1 \
-  --confirmation-evaluation-interval 1 \
-  --n-random-candidates 1 \
-  --confirmation-top-k 1 \
-  --traversals 50 \
-  --value-traversals 50 \
-  --policy-network-train-steps 20 \
-  --regret-network-train-steps 20 \
-  --value-network-train-steps 20 \
-  --output-root outputs/smoke_tests
+# Experiment 4 smoke test
+./gcp/submit_batch_experiment.sh \
+  "escher-smoke-exp4-$(date +%Y%m%d-%H%M%S)" \
+  "/usr/bin/time -v python -m experiments.leduc_poker.escher_constrained_hyperparameter_search.run \
+    --screening-seeds 1234 \
+    --confirmation-seeds 1234 \
+    --screening-iterations 2 \
+    --confirmation-iterations 2 \
+    --screening-evaluation-interval 1 \
+    --confirmation-evaluation-interval 1 \
+    --n-random-candidates 1 \
+    --confirmation-top-k 1 \
+    --traversals 50 \
+    --value-traversals 50 \
+    --policy-network-train-steps 20 \
+    --regret-network-train-steps 20 \
+    --value-network-train-steps 20 \
+    --output-root outputs/cloud/escher-smoke-exp4" \
+  "n2-standard-4" "3600" "4000" "16000" "100"
 
-python -m experiments.leduc_poker.escher_warm_start_fair_ablation.run \
-  --seeds 1234 \
-  --iterations 2 \
-  --warm-start-boundary 1 \
-  --traversals 5 \
-  --value-traversals 5 \
-  --policy-network-train-steps 2 \
-  --regret-network-train-steps 2 \
-  --value-network-train-steps 2 \
-  --evaluation-interval 1 \
-  --output-root outputs/smoke_tests
+# Experiment 5 smoke test
+./gcp/submit_batch_experiment.sh \
+  "escher-smoke-exp5-$(date +%Y%m%d-%H%M%S)" \
+  "/usr/bin/time -v python -m experiments.leduc_poker.escher_warm_start_fair_ablation.run \
+    --seeds 1234 \
+    --iterations 2 \
+    --warm-start-boundary 1 \
+    --traversals 5 \
+    --value-traversals 5 \
+    --policy-network-train-steps 2 \
+    --regret-network-train-steps 2 \
+    --value-network-train-steps 2 \
+    --evaluation-interval 1 \
+    --output-root outputs/cloud/escher-smoke-exp5" \
+  "n2-standard-4" "3600" "4000" "16000" "100"
 
-python -m experiments.leduc_poker.escher_lr_schedule_ablation.run \
-  --seeds 1234 \
-  --iterations 2 \
-  --traversals 5 \
-  --value-traversals 5 \
-  --policy-network-train-steps 2 \
-  --regret-network-train-steps 2 \
-  --value-network-train-steps 2 \
-  --evaluation-interval 1 \
-  --output-root outputs/smoke_tests
+# Experiment 6 smoke test
+./gcp/submit_batch_experiment.sh \
+  "escher-smoke-exp6-$(date +%Y%m%d-%H%M%S)" \
+  "/usr/bin/time -v python -m experiments.leduc_poker.escher_lr_schedule_ablation.run \
+    --seeds 1234 \
+    --iterations 2 \
+    --traversals 5 \
+    --value-traversals 5 \
+    --policy-network-train-steps 2 \
+    --regret-network-train-steps 2 \
+    --value-network-train-steps 2 \
+    --evaluation-interval 1 \
+    --output-root outputs/cloud/escher-smoke-exp6" \
+  "n2-standard-4" "3600" "4000" "16000" "100"
 
-python -m experiments.leduc_poker.escher_reach_weighting_ablation.run \
-  --seeds 1234 \
-  --iterations 2 \
-  --traversals 5 \
-  --value-traversals 5 \
-  --policy-network-train-steps 2 \
-  --regret-network-train-steps 2 \
-  --value-network-train-steps 2 \
-  --evaluation-interval 1 \
-  --output-root outputs/smoke_tests
+# Experiment 7 smoke test
+./gcp/submit_batch_experiment.sh \
+  "escher-smoke-exp7-$(date +%Y%m%d-%H%M%S)" \
+  "/usr/bin/time -v python -m experiments.leduc_poker.escher_reach_weighting_ablation.run \
+    --seeds 1234 \
+    --iterations 2 \
+    --traversals 5 \
+    --value-traversals 5 \
+    --policy-network-train-steps 2 \
+    --regret-network-train-steps 2 \
+    --value-network-train-steps 2 \
+    --evaluation-interval 1 \
+    --output-root outputs/cloud/escher-smoke-exp7" \
+  "n2-standard-4" "3600" "4000" "16000" "100"
 
-python -m experiments.leduc_poker.escher_reuse_value_trajectory_ablation.run \
-  --seeds 1234 \
-  --iterations 2 \
-  --traversals 5 \
-  --value-traversals 5 \
-  --value-test-traversals 2 \
-  --policy-network-train-steps 2 \
-  --regret-network-train-steps 2 \
-  --value-network-train-steps 2 \
-  --evaluation-interval 1 \
-  --output-root outputs/smoke_tests
+# Experiment 8 smoke test
+./gcp/submit_batch_experiment.sh \
+  "escher-smoke-exp8-$(date +%Y%m%d-%H%M%S)" \
+  "/usr/bin/time -v python -m experiments.leduc_poker.escher_reuse_value_trajectory_ablation.run \
+    --seeds 1234 \
+    --iterations 2 \
+    --traversals 5 \
+    --value-traversals 5 \
+    --value-test-traversals 2 \
+    --policy-network-train-steps 2 \
+    --regret-network-train-steps 2 \
+    --value-network-train-steps 2 \
+    --evaluation-interval 1 \
+    --output-root outputs/cloud/escher-smoke-exp8" \
+  "n2-standard-4" "3600" "4000" "16000" "100"
 
-python -m experiments.leduc_poker.escher_disk_backed_regret_memory_ablation.run \
-  --seeds 1234 \
-  --iterations 2 \
-  --traversals 5 \
-  --value-traversals 5 \
-  --policy-network-train-steps 2 \
-  --regret-network-train-steps 2 \
-  --value-network-train-steps 2 \
-  --evaluation-interval 1 \
-  --output-root outputs/smoke_tests
+# Experiment 9 smoke test
+./gcp/submit_batch_experiment.sh \
+  "escher-smoke-exp9-$(date +%Y%m%d-%H%M%S)" \
+  "/usr/bin/time -v python -m experiments.leduc_poker.escher_disk_backed_regret_memory_ablation.run \
+    --seeds 1234 \
+    --iterations 2 \
+    --traversals 5 \
+    --value-traversals 5 \
+    --policy-network-train-steps 2 \
+    --regret-network-train-steps 2 \
+    --value-network-train-steps 2 \
+    --evaluation-interval 1 \
+    --output-root outputs/cloud/escher-smoke-exp9" \
+  "n2-standard-4" "3600" "4000" "16000" "100"
 
-python -m experiments.leduc_poker.escher_on_policy_joint_regret_ablation.run \
-  --seeds 1234 \
-  --iterations 2 \
-  --traversals 5 \
-  --value-traversals 5 \
-  --policy-network-train-steps 2 \
-  --regret-network-train-steps 2 \
-  --value-network-train-steps 2 \
-  --evaluation-interval 1 \
-  --output-root outputs/smoke_tests
+# Experiment 10 smoke test
+./gcp/submit_batch_experiment.sh \
+  "escher-smoke-exp10-$(date +%Y%m%d-%H%M%S)" \
+  "/usr/bin/time -v python -m experiments.leduc_poker.escher_on_policy_joint_regret_ablation.run \
+    --seeds 1234 \
+    --iterations 2 \
+    --traversals 5 \
+    --value-traversals 5 \
+    --policy-network-train-steps 2 \
+    --regret-network-train-steps 2 \
+    --value-network-train-steps 2 \
+    --evaluation-interval 1 \
+    --output-root outputs/cloud/escher-smoke-exp10" \
+  "n2-standard-4" "3600" "4000" "16000" "100"
 
-python -m experiments.leduc_poker.escher_solver_parameter_random_search.run \
-  --screening-seeds 1234 \
-  --confirmation-seeds 1234 \
-  --screening-iterations 2 \
-  --confirmation-iterations 2 \
-  --screening-evaluation-interval 1 \
-  --confirmation-evaluation-interval 1 \
-  --n-random-candidates 1 \
-  --confirmation-top-k 1 \
-  --traversals 5 \
-  --value-traversals 5 \
-  --policy-network-train-steps 2 \
-  --regret-network-train-steps 2 \
-  --value-network-train-steps 2 \
-  --policy-network-layers 32,32 \
-  --regret-network-layers 32,32 \
-  --value-network-layers 32,32 \
-  --all-actions true \
-  --use-balanced-probs false \
-  --val-bootstrap false \
-  --output-root outputs/smoke_tests
+# Experiment 11 smoke test
+./gcp/submit_batch_experiment.sh \
+  "escher-smoke-exp11-$(date +%Y%m%d-%H%M%S)" \
+  "/usr/bin/time -v python -m experiments.leduc_poker.escher_solver_parameter_random_search.run \
+    --screening-seeds 1234 \
+    --confirmation-seeds 1234 \
+    --screening-iterations 2 \
+    --confirmation-iterations 2 \
+    --screening-evaluation-interval 1 \
+    --confirmation-evaluation-interval 1 \
+    --n-random-candidates 1 \
+    --confirmation-top-k 1 \
+    --traversals 5 \
+    --value-traversals 5 \
+    --policy-network-train-steps 2 \
+    --regret-network-train-steps 2 \
+    --value-network-train-steps 2 \
+    --policy-network-layers 32,32 \
+    --regret-network-layers 32,32 \
+    --value-network-layers 32,32 \
+    --all-actions true \
+    --use-balanced-probs false \
+    --val-bootstrap false \
+    --output-root outputs/cloud/escher-smoke-exp11" \
+  "n2-standard-4" "3600" "4000" "16000" "100"
 
-python -m experiments.leduc_poker.escher_candidate_architecture_multiseed.run \
-  --seeds 1234 \
-  --iterations 2 \
-  --traversals 2 \
-  --value-traversals 2 \
-  --policy-network-train-steps 1 \
-  --regret-network-train-steps 1 \
-  --value-network-train-steps 1 \
-  --evaluation-interval 1 \
-  --batch-size-regret 2 \
-  --batch-size-value 2 \
-  --batch-size-average-policy 2 \
-  --memory-capacity 128 \
-  --output-root outputs/smoke_tests
+# Experiment 23 smoke test
+./gcp/submit_batch_experiment.sh \
+  "escher-smoke-exp23-$(date +%Y%m%d-%H%M%S)" \
+  "/usr/bin/time -v python -m experiments.leduc_poker.escher_regret_target_processing_ablation.run \
+    --seeds 1234 \
+    --variant-ids raw_regret_targets,standardized_clipped_regret_targets \
+    --iterations 2 \
+    --traversals 2 \
+    --value-traversals 2 \
+    --evaluation-interval 1 \
+    --policy-network-train-steps 1 \
+    --regret-network-train-steps 1 \
+    --value-network-train-steps 1 \
+    --batch-size-regret 2 \
+    --batch-size-value 2 \
+    --batch-size-average-policy 2 \
+    --memory-capacity 128 \
+    --output-root outputs/cloud/escher-smoke-exp23" \
+  "n2-standard-4" "3600" "4000" "16000" "100"
+
+# Experiment 24 smoke test
+./gcp/submit_batch_experiment.sh \
+  "escher-smoke-exp24-$(date +%Y%m%d-%H%M%S)" \
+  "/usr/bin/time -v python -m experiments.leduc_poker.escher_action_head_residual_mlp_sweep.run \
+    --seed 1234 \
+    --variant-ids carry_forward_256_128_action_heads,deep_same_width_256_256_128_action_heads \
+    --iterations 2 \
+    --traversals 2 \
+    --value-traversals 2 \
+    --evaluation-interval 1 \
+    --policy-network-train-steps 1 \
+    --regret-network-train-steps 1 \
+    --value-network-train-steps 1 \
+    --batch-size-regret 2 \
+    --batch-size-value 2 \
+    --batch-size-average-policy 2 \
+    --output-root outputs/cloud/escher-smoke-exp24" \
+  "n2-standard-4" "3600" "4000" "16000" "100"
+
+# Experiment 25 smoke test
+./gcp/submit_batch_experiment.sh \
+  "escher-smoke-exp25-$(date +%Y%m%d-%H%M%S)" \
+  "/usr/bin/time -v python -m experiments.leduc_poker.escher_average_policy_weighting_ablation.run \
+    --seeds 1234 \
+    --variant-ids linear_avg_weighting_baseline,uniform_avg_weighting \
+    --iterations 2 \
+    --traversals 2 \
+    --value-traversals 2 \
+    --evaluation-interval 1 \
+    --policy-network-train-steps 1 \
+    --regret-network-train-steps 1 \
+    --value-network-train-steps 1 \
+    --batch-size-regret 2 \
+    --batch-size-value 2 \
+    --batch-size-average-policy 2 \
+    --memory-capacity 128 \
+    --output-root outputs/cloud/escher-smoke-exp25" \
+  "n2-standard-4" "3600" "4000" "16000" "100"
+
+# Experiment 26 smoke test
+./gcp/submit_batch_experiment.sh \
+  "escher-smoke-exp26-$(date +%Y%m%d-%H%M%S)" \
+  "/usr/bin/time -v python -m experiments.leduc_poker.escher_factorised_regret_head_ablation.run \
+    --seed 1234 \
+    --variant-ids direct_regret_action_head_64_baseline,dueling_regret_action_head_64 \
+    --iterations 2 \
+    --traversals 2 \
+    --value-traversals 2 \
+    --evaluation-interval 1 \
+    --policy-network-train-steps 1 \
+    --regret-network-train-steps 1 \
+    --value-network-train-steps 1 \
+    --batch-size-regret 2 \
+    --batch-size-value 2 \
+    --batch-size-average-policy 2 \
+    --output-root outputs/cloud/escher-smoke-exp26" \
+  "n2-standard-4" "3600" "4000" "16000" "100"
+
+# Experiment 27 smoke test
+./gcp/submit_batch_experiment.sh \
+  "escher-smoke-exp27-$(date +%Y%m%d-%H%M%S)" \
+  "/usr/bin/time -v python -m experiments.leduc_poker.escher_action_head_layer_norm_residual_ablation.run \
+    --seed 1234 \
+    --variant-ids carry_forward_layer_norm_256_128_action_heads,deep_residual_layer_norm_256_256_128_action_heads \
+    --iterations 2 \
+    --traversals 2 \
+    --value-traversals 2 \
+    --evaluation-interval 1 \
+    --policy-network-train-steps 1 \
+    --regret-network-train-steps 1 \
+    --value-network-train-steps 1 \
+    --batch-size-regret 2 \
+    --batch-size-value 2 \
+    --batch-size-average-policy 2 \
+    --output-root outputs/cloud/escher-smoke-exp27" \
+  "n2-standard-4" "3600" "4000" "16000" "100"
+
+# Experiment 28 smoke test
+./gcp/submit_batch_experiment.sh \
+  "escher-smoke-exp28-$(date +%Y%m%d-%H%M%S)" \
+  "/usr/bin/time -v python -m experiments.leduc_poker.escher_candidate_architecture_multiseed.run \
+    --seeds 1234 \
+    --iterations 2 \
+    --traversals 2 \
+    --value-traversals 2 \
+    --policy-network-train-steps 1 \
+    --regret-network-train-steps 1 \
+    --value-network-train-steps 1 \
+    --evaluation-interval 1 \
+    --batch-size-regret 2 \
+    --batch-size-value 2 \
+    --batch-size-average-policy 2 \
+    --memory-capacity 128 \
+    --output-root outputs/cloud/escher-smoke-exp28" \
+  "n2-standard-4" "3600" "4000" "16000" "100"
 ```
 
 Outputs are written to a timestamped subdirectory under `outputs/` by default. The key files are:
