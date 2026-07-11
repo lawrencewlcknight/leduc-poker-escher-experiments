@@ -90,7 +90,8 @@ The repository is organised so that each experiment can be run independently whi
 │       ├── escher_action_head_residual_mlp_sweep/    # Experiment 24
 │       ├── escher_average_policy_weighting_ablation/ # Experiment 25
 │       ├── escher_factorised_regret_head_ablation/   # Experiment 26
-│       └── escher_action_head_layer_norm_residual_ablation/ # Experiment 27
+│       ├── escher_action_head_layer_norm_residual_ablation/ # Experiment 27
+│       └── escher_candidate_architecture_multiseed/  # Experiment 28
 ├── docs/
 │   └── OUTPUT_CONVENTIONS.md
 ├── notebooks/                                        # Original notebook archive
@@ -317,6 +318,20 @@ a deeper residual+LayerNorm trunk.
 **Question:** does layer normalisation or residual+LayerNorm trunk structure
 improve ESCHER exploitability once the regret action-head architecture is fixed?
 
+### 28. ESCHER candidate architecture multi-seed validation
+
+[`experiments/leduc_poker/escher_candidate_architecture_multiseed/`](experiments/leduc_poker/escher_candidate_architecture_multiseed/README.md)
+
+Trains the current best candidate ESCHER architecture over five fixed Leduc
+poker seeds. The candidate combines `(256, 256, 128)` plain policy, regret, and
+value trunks, no LayerNorm, no residual trunk connections, standard linear
+policy output, one 64-unit per-action regret head, and standardised regret
+targets without clipping.
+
+**Question:** do the strongest architecture changes identified in the
+single-seed diagnostics remain effective when combined and evaluated over five
+seeds?
+
 ## Setup
 
 Create and activate a Python 3.9 virtual environment. The repository contains
@@ -417,6 +432,9 @@ python -m experiments.leduc_poker.escher_factorised_regret_head_ablation.run
 
 # Experiment 27 — action-head LayerNorm/residual-LN ablation
 python -m experiments.leduc_poker.escher_action_head_layer_norm_residual_ablation.run
+
+# Experiment 28 — candidate architecture multi-seed validation
+python -m experiments.leduc_poker.escher_candidate_architecture_multiseed.run
 ```
 
 For a quick smoke test:
@@ -559,6 +577,21 @@ python -m experiments.leduc_poker.escher_solver_parameter_random_search.run \
   --all-actions true \
   --use-balanced-probs false \
   --val-bootstrap false \
+  --output-root outputs/smoke_tests
+
+python -m experiments.leduc_poker.escher_candidate_architecture_multiseed.run \
+  --seeds 1234 \
+  --iterations 2 \
+  --traversals 2 \
+  --value-traversals 2 \
+  --policy-network-train-steps 1 \
+  --regret-network-train-steps 1 \
+  --value-network-train-steps 1 \
+  --evaluation-interval 1 \
+  --batch-size-regret 2 \
+  --batch-size-value 2 \
+  --batch-size-average-policy 2 \
+  --memory-capacity 128 \
   --output-root outputs/smoke_tests
 ```
 

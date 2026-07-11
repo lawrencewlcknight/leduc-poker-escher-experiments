@@ -240,6 +240,28 @@ python -m experiments.leduc_poker.escher_solver_parameter_random_search.run \
 
 This should produce screening and confirmation summaries, paired confirmation deltas, checkpoint curves, sampled-parameter metadata, NPZ export, and PNG plots.
 
+Run a tiny one-seed candidate architecture validation:
+
+```bash
+python -m experiments.leduc_poker.escher_candidate_architecture_multiseed.run \
+  --seeds 1234 \
+  --iterations 2 \
+  --traversals 2 \
+  --value-traversals 2 \
+  --policy-network-train-steps 1 \
+  --regret-network-train-steps 1 \
+  --value-network-train-steps 1 \
+  --evaluation-interval 1 \
+  --batch-size-regret 2 \
+  --batch-size-value 2 \
+  --batch-size-average-policy 2 \
+  --memory-capacity 128 \
+  --output-root outputs/smoke_tests
+```
+
+This should produce the candidate architecture seed summary, checkpoint curves,
+aggregate summary, and nodes-touched plots.
+
 ## 5. Full experiment run
 
 ```bash
@@ -265,6 +287,7 @@ python -m experiments.leduc_poker.escher_activation_sweep.run
 python -m experiments.leduc_poker.escher_residual_mlp_sweep.run
 python -m experiments.leduc_poker.escher_bottleneck_architecture_sweep.run
 python -m experiments.leduc_poker.escher_shared_trunk_head_sweep.run
+python -m experiments.leduc_poker.escher_candidate_architecture_multiseed.run
 ```
 
 The full runs use the aligned ESCHER baseline configuration. Most experiments default to the 10 thesis seeds; some targeted ablations use the smaller notebook seed set unless `--seeds` is supplied. These may take a long time.
