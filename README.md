@@ -91,7 +91,12 @@ The repository is organised so that each experiment can be run independently whi
 │       ├── escher_average_policy_weighting_ablation/ # Experiment 25
 │       ├── escher_factorised_regret_head_ablation/   # Experiment 26
 │       ├── escher_action_head_layer_norm_residual_ablation/ # Experiment 27
-│       └── escher_candidate_architecture_multiseed/  # Experiment 28
+│       ├── escher_candidate_architecture_multiseed/  # Experiment 28
+│       ├── escher_reinitialisation_ablation/         # Experiment 29
+│       ├── escher_learning_rate_ablation/            # Experiment 30
+│       ├── escher_replay_capacity_ablation/          # Experiment 31
+│       ├── escher_regret_value_work_ablation/        # Experiment 32
+│       └── escher_regret_action_head_capacity_ablation/ # Experiment 33
 ├── docs/
 │   └── OUTPUT_CONVENTIONS.md
 ├── notebooks/                                        # Original notebook archive
@@ -332,6 +337,69 @@ targets without clipping.
 single-seed diagnostics remain effective when combined and evaluated over five
 seeds?
 
+### 29. ESCHER reinitialisation ablation
+
+[`experiments/leduc_poker/escher_reinitialisation_ablation/`](experiments/leduc_poker/escher_reinitialisation_ablation/README.md)
+
+Compares the Experiment 28 candidate architecture against the same model with
+regret-network and value-network reinitialisation disabled. Both arms use the
+same five fixed development seeds and hold the architecture, target processing,
+traversal budget, replay settings, and supervised update budgets fixed.
+
+**Question:** does keeping the regret and value networks persistent across
+ESCHER iterations improve the Experiment 28 candidate architecture?
+
+### 30. ESCHER candidate learning-rate ablation
+
+[`experiments/leduc_poker/escher_learning_rate_ablation/`](experiments/leduc_poker/escher_learning_rate_ablation/README.md)
+
+Compares the Experiment 28 candidate architecture against low and high constant
+learning-rate treatments. The baseline uses the carried-forward constant
+learning rate \(10^{-3}\), while the treatments use \(5\times10^{-4}\) and
+\(2\times10^{-3}\). No learning-rate decay schedules are tested.
+
+**Question:** does a lower or higher constant learning rate improve the
+Experiment 28 candidate architecture?
+
+### 31. ESCHER candidate replay-capacity ablation
+
+[`experiments/leduc_poker/escher_replay_capacity_ablation/`](experiments/leduc_poker/escher_replay_capacity_ablation/README.md)
+
+Compares the Experiment 28 candidate architecture against larger replay-buffer
+treatments. The baseline uses replay capacity 50,000 with regret and value
+batches of 256. Treatments test replay capacity 100,000, replay capacity
+200,000, and replay capacity 200,000 with regret batch size increased to 512
+while the value batch remains 256.
+
+**Question:** does relieving replay-buffer pressure, with or without a larger
+regret supervised batch, allow the Experiment 28 candidate architecture to keep
+improving later in training?
+
+### 32. ESCHER candidate regret/value work-balance ablation
+
+[`experiments/leduc_poker/escher_regret_value_work_ablation/`](experiments/leduc_poker/escher_regret_value_work_ablation/README.md)
+
+Compares the Experiment 28 candidate architecture against regret-heavy work
+allocations. The baseline uses 500 regret traversals, 500 value traversals, 200
+regret-network training steps, and 200 value-network training steps. Treatments
+shift traversal collection, supervised fitting effort, or both toward the regret
+pathway while keeping the architecture fixed.
+
+**Question:** is the Experiment 28 plateau partly caused by insufficient regret
+data or regret fitting relative to history-value fitting?
+
+### 33. ESCHER candidate regret action-head capacity ablation
+
+[`experiments/leduc_poker/escher_regret_action_head_capacity_ablation/`](experiments/leduc_poker/escher_regret_action_head_capacity_ablation/README.md)
+
+Compares the Experiment 28 candidate regret head against two larger per-action
+regret-head designs: one 128-unit head and a two-layer 64-by-64 head. The policy
+network, value network, trunk architecture, replay settings, and training
+protocol remain fixed.
+
+**Question:** does increasing the capacity of the per-action regret head improve
+ESCHER's ability to model regret targets after the shared trunk?
+
 ## Setup
 
 Create and activate a Python 3.9 virtual environment. The repository contains
@@ -435,6 +503,21 @@ python -m experiments.leduc_poker.escher_action_head_layer_norm_residual_ablatio
 
 # Experiment 28 — candidate architecture multi-seed validation
 python -m experiments.leduc_poker.escher_candidate_architecture_multiseed.run
+
+# Experiment 29 — reinitialisation ablation on the candidate architecture
+python -m experiments.leduc_poker.escher_reinitialisation_ablation.run
+
+# Experiment 30 — learning-rate ablation on the candidate architecture
+python -m experiments.leduc_poker.escher_learning_rate_ablation.run
+
+# Experiment 31 — replay-capacity ablation on the candidate architecture
+python -m experiments.leduc_poker.escher_replay_capacity_ablation.run
+
+# Experiment 32 — regret/value work-balance ablation on the candidate architecture
+python -m experiments.leduc_poker.escher_regret_value_work_ablation.run
+
+# Experiment 33 — regret action-head capacity ablation on the candidate architecture
+python -m experiments.leduc_poker.escher_regret_action_head_capacity_ablation.run
 ```
 
 For quick GCP smoke tests, first make sure the environment variables required
@@ -740,6 +823,100 @@ root. Each command submits a separate Google Batch job.
     --batch-size-average-policy 2 \
     --memory-capacity 128 \
     --output-root outputs/cloud/escher-smoke-exp28" \
+  "n2-standard-4" "3600" "4000" "16000" "100"
+
+# Experiment 29 smoke test
+./gcp/submit_batch_experiment.sh \
+  "escher-smoke-exp29-$(date +%Y%m%d-%H%M%S)" \
+  "/usr/bin/time -v python -m experiments.leduc_poker.escher_reinitialisation_ablation.run \
+    --seeds 1234 \
+    --iterations 2 \
+    --traversals 2 \
+    --value-traversals 2 \
+    --policy-network-train-steps 1 \
+    --regret-network-train-steps 1 \
+    --value-network-train-steps 1 \
+    --evaluation-interval 1 \
+    --batch-size-regret 2 \
+    --batch-size-value 2 \
+    --batch-size-average-policy 2 \
+    --memory-capacity 128 \
+    --output-root outputs/cloud/escher-smoke-exp29" \
+  "n2-standard-4" "3600" "4000" "16000" "100"
+
+# Experiment 30 smoke test
+./gcp/submit_batch_experiment.sh \
+  "escher-smoke-exp30-$(date +%Y%m%d-%H%M%S)" \
+  "/usr/bin/time -v python -m experiments.leduc_poker.escher_learning_rate_ablation.run \
+    --seeds 1234 \
+    --iterations 2 \
+    --traversals 2 \
+    --value-traversals 2 \
+    --policy-network-train-steps 1 \
+    --regret-network-train-steps 1 \
+    --value-network-train-steps 1 \
+    --evaluation-interval 1 \
+    --batch-size-regret 2 \
+    --batch-size-value 2 \
+    --batch-size-average-policy 2 \
+    --memory-capacity 128 \
+    --output-root outputs/cloud/escher-smoke-exp30" \
+  "n2-standard-4" "3600" "4000" "16000" "100"
+
+# Experiment 31 smoke test
+./gcp/submit_batch_experiment.sh \
+  "escher-smoke-exp31-$(date +%Y%m%d-%H%M%S)" \
+  "/usr/bin/time -v python -m experiments.leduc_poker.escher_replay_capacity_ablation.run \
+    --seeds 1234 \
+    --variant-ids baseline_replay_50k \
+    --iterations 2 \
+    --traversals 2 \
+    --value-traversals 2 \
+    --policy-network-train-steps 1 \
+    --regret-network-train-steps 1 \
+    --value-network-train-steps 1 \
+    --evaluation-interval 1 \
+    --output-root outputs/cloud/escher-smoke-exp31" \
+  "n2-standard-4" "3600" "4000" "16000" "100"
+
+# Experiment 32 smoke test
+./gcp/submit_batch_experiment.sh \
+  "escher-smoke-exp32-$(date +%Y%m%d-%H%M%S)" \
+  "/usr/bin/time -v python -m experiments.leduc_poker.escher_regret_value_work_ablation.run \
+    --seeds 1234 \
+    --variant-ids baseline_regret_value_work \
+    --iterations 2 \
+    --traversals 2 \
+    --value-traversals 2 \
+    --policy-network-train-steps 1 \
+    --regret-network-train-steps 1 \
+    --value-network-train-steps 1 \
+    --evaluation-interval 1 \
+    --batch-size-regret 2 \
+    --batch-size-value 2 \
+    --batch-size-average-policy 2 \
+    --memory-capacity 128 \
+    --output-root outputs/cloud/escher-smoke-exp32" \
+  "n2-standard-4" "3600" "4000" "16000" "100"
+
+# Experiment 33 smoke test
+./gcp/submit_batch_experiment.sh \
+  "escher-smoke-exp33-$(date +%Y%m%d-%H%M%S)" \
+  "/usr/bin/time -v python -m experiments.leduc_poker.escher_regret_action_head_capacity_ablation.run \
+    --seeds 1234 \
+    --variant-ids baseline_regret_head_64 \
+    --iterations 2 \
+    --traversals 2 \
+    --value-traversals 2 \
+    --policy-network-train-steps 1 \
+    --regret-network-train-steps 1 \
+    --value-network-train-steps 1 \
+    --evaluation-interval 1 \
+    --batch-size-regret 2 \
+    --batch-size-value 2 \
+    --batch-size-average-policy 2 \
+    --memory-capacity 128 \
+    --output-root outputs/cloud/escher-smoke-exp33" \
   "n2-standard-4" "3600" "4000" "16000" "100"
 ```
 

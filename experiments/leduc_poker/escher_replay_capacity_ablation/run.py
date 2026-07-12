@@ -1,0 +1,567 @@
+"""CLI for Experiment 31 ESCHER replay-capacity ablation."""
+
+from __future__ import annotations
+
+import argparse
+import csv
+from copy import deepcopy
+import json
+import logging
+import os
+from pathlib import Path
+import sys
+import traceback
+from typing import Dict, List, Mapping, Optional, Sequence
+
+os.environ.setdefault("CUDA_VISIBLE_DEVICES", "")
+os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
+os.environ.setdefault("ABSL_MIN_LOG_LEVEL", "3")
+os.environ.setdefault("XDG_CACHE_HOME", str((Path("outputs") / ".cache").resolve()))
+os.environ.setdefault(
+    "MPLCONFIGDIR",
+    str((Path("outputs") / ".matplotlib_cache").resolve()),
+)
+Path(os.environ["XDG_CACHE_HOME"]).mkdir(parents=True, exist_ok=True)
+Path(os.environ["MPLCONFIGDIR"]).mkdir(parents=True, exist_ok=True)
+
+import matplotlib.pyplot as plt  # noqa: E402
+import numpy as np  # noqa: E402
+from tqdm import tqdm  # noqa: E402
+
+from escher_poker.chart_titles import set_chart_title  # noqa: E402
+from escher_poker.constants import (  # noqa: E402
+    AVERAGE_POLICY_VALUE_TARGET_LABEL,
+    LEDUC_GAME_VALUE_PLAYER_0,
+    NASH_EXPLOITABILITY_TARGET,
+    NASH_EXPLOITABILITY_TARGET_LABEL,
+)
+from escher_poker.experiment_utils import (  # noqa: E402
+    cleanup_tensorflow_memory,
+    create_run_dir,
+    json_safe,
+    run_single_seed_variant,
+    safe_stats,
+)
+from experiments.leduc_poker.escher_variant_config_utils import (  # noqa: E402
+    make_variant_config,
+    parse_variant_ids,
+    variant_lookup,
+)
+
+from .config import (  # noqa: E402
+    BASELINE_VARIANT_ID,
+    DEFAULT_CONFIG,
+    DEFAULT_SEEDS,
+    VARIANTS,
+)
+
+_LOGGER = logging.getLogger("escher_poker.experiment.replay_capacity_ablation")
+
+SUMMARY_HP_FIELDS = [
+    "num_iterations",
+    "num_traversals",
+    "num_val_fn_traversals",
+    "importance_sampling",
+    "zero_regret_fallback",
+    "all_actions",
+    "expl",
+    "val_expl",
+    "average_policy_weighting",
+    "learning_rate",
+    "learning_rate_schedule",
+    "learning_rate_end",
+    "learning_rate_decay_rate",
+    "learning_rate_warmup_iterations",
+    "memory_capacity",
+    "batch_size_regret",
+    "batch_size_value",
+    "batch_size_average_policy",
+    "policy_network_train_steps",
+    "regret_network_train_steps",
+    "value_network_train_steps",
+    "policy_network_layers",
+    "regret_network_layers",
+    "value_network_layers",
+    "policy_network_activation",
+    "regret_network_activation",
+    "value_network_activation",
+    "policy_network_layer_norm",
+    "regret_network_layer_norm",
+    "value_network_layer_norm",
+    "policy_network_residual_mode",
+    "regret_network_residual_mode",
+    "value_network_residual_mode",
+    "policy_network_head_depth",
+    "regret_network_head_depth",
+    "policy_network_head_units",
+    "regret_network_head_units",
+    "regret_network_output_mode",
+    "regret_target_processing",
+    "regret_target_clip_value",
+    "regret_target_standardize_epsilon",
+    "reinitialize_regret_networks",
+    "reinitialize_value_network",
+]
+
+PAIRED_DELTA_FIELDS = [
+    "final_exploitability",
+    "intermediate_best_exploitability",
+    "intermediate_exploitability_normalised_auc_nodes",
+    "final_policy_value_error",
+    "final_policy_loss",
+    "last_intermediate_regret_loss_player_0",
+    "last_intermediate_regret_loss_player_1",
+    "last_intermediate_value_loss",
+    "last_intermediate_value_test_loss",
+    "peak_rss_mb",
+]
+
+
+def _str2bool(value: str) -> bool:
+    if isinstance(value, bool):
+        return value
+    lowered = value.lower()
+    if lowered in {"true", "t", "yes", "y", "1"}:
+        return True
+    if lowered in {"false", "f", "no", "n", "0"}:
+        return False
+    raise argparse.ArgumentTypeError(f"Boolean value expected, got {value!r}")
+
+
+def _parse_int_tuple(value: Optional[str]):
+    if value is None:
+        return None
+    return tuple(int(item.strip()) for item in value.split(",") if item.strip())
+
+
+def _parse_seeds(value: Optional[str]) -> List[int]:
+    if not value:
+        return list(DEFAULT_SEEDS)
+    return [int(item.strip()) for item in value.split(",") if item.strip()]
+
+
+def _write_csv(path: Path, rows: Sequence[Mapping]) -> None:
+    if not rows:
+        return
+    fields: List[str] = []
+    for row in rows:
+        for key in row.keys():
+            if key not in fields:
+                fields.append(key)
+    with open(path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=fields)
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def _write_json(path: Path, payload) -> None:
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(json_safe(payload), f, indent=2)
+
+
+def _configure_logging(run_dir: Path, verbose: bool) -> None:
+    log_level = logging.DEBUG if verbose else logging.INFO
+    log_format = "%(asctime)s %(levelname)s %(name)s: %(message)s"
+    logging.basicConfig(level=log_level, format=log_format, stream=sys.stdout)
+    file_handler = logging.FileHandler(run_dir / "experiment.log", encoding="utf-8")
+    file_handler.setLevel(log_level)
+    file_handler.setFormatter(logging.Formatter(log_format))
+    logging.getLogger().addHandler(file_handler)
+
+
+def _build_base_config(args) -> Dict:
+    config = deepcopy(DEFAULT_CONFIG)
+    overrides = {
+        "experiment_name": args.experiment_name,
+        "num_iterations": args.iterations,
+        "check_exploitability_every": args.evaluation_interval,
+        "num_traversals": args.traversals,
+        "num_val_fn_traversals": args.value_traversals,
+        "memory_capacity": args.memory_capacity,
+        "batch_size_regret": args.batch_size_regret,
+        "batch_size_value": args.batch_size_value,
+        "batch_size_average_policy": args.batch_size_average_policy,
+        "policy_network_train_steps": args.policy_network_train_steps,
+        "regret_network_train_steps": args.regret_network_train_steps,
+        "value_network_train_steps": args.value_network_train_steps,
+        "policy_network_layers": _parse_int_tuple(args.policy_network_layers),
+        "regret_network_layers": _parse_int_tuple(args.regret_network_layers),
+        "value_network_layers": _parse_int_tuple(args.value_network_layers),
+        "compute_exploitability": args.compute_exploitability,
+        "save_final_checkpoints": args.save_final_checkpoints,
+        "baseline_variant_id": args.baseline_variant_id,
+    }
+    for key, value in overrides.items():
+        if value is not None:
+            config[key] = value
+    return config
+
+
+def _selected_variants(args) -> List[Dict]:
+    selected_ids = parse_variant_ids(args.variant_ids, list(VARIANTS))
+    lookup = variant_lookup(list(VARIANTS))
+    unknown = [variant_id for variant_id in selected_ids if variant_id not in lookup]
+    if unknown:
+        raise ValueError(f"Unknown replay-capacity variant id(s): {unknown}")
+    return [lookup[variant_id] for variant_id in selected_ids]
+
+
+def _augment_summary(summary: Dict, config: Mapping) -> Dict:
+    summary["variant_description"] = config.get("variant_description", "")
+    summary["replay_capacity_variant"] = int(config.get("memory_capacity", 0))
+    summary["regret_batch_variant"] = int(config.get("batch_size_regret", 0))
+    summary["value_batch_variant"] = int(config.get("batch_size_value", 0))
+    for key in SUMMARY_HP_FIELDS:
+        summary[f"hp_{key}"] = json_safe(config.get(key))
+    return summary
+
+
+def _numeric_summary(rows: Sequence[Mapping]) -> Dict[str, Dict]:
+    fields: List[str] = []
+    for row in rows:
+        for key, value in row.items():
+            if isinstance(value, bool):
+                continue
+            if isinstance(value, (int, float, np.integer, np.floating)) and key not in fields:
+                fields.append(key)
+    return {
+        field: safe_stats([float(row.get(field, np.nan)) for row in rows])
+        for field in fields
+    }
+
+
+def _aggregate_by_variant(rows: Sequence[Mapping], variants: Sequence[Mapping]) -> Dict:
+    aggregate = {}
+    for variant in variants:
+        variant_id = str(variant["variant_id"])
+        variant_rows = [row for row in rows if row["variant_id"] == variant_id]
+        aggregate[variant_id] = _numeric_summary(variant_rows)
+    return aggregate
+
+
+def _paired_rows(rows: Sequence[Mapping], baseline_variant_id: str) -> List[Dict]:
+    by_variant_seed = {
+        (str(row["variant_id"]), int(row["seed"])): row
+        for row in rows
+    }
+    seeds = sorted({int(row["seed"]) for row in rows})
+    variants = sorted({str(row["variant_id"]) for row in rows})
+    paired = []
+    for seed in seeds:
+        baseline = by_variant_seed.get((baseline_variant_id, seed))
+        if baseline is None:
+            continue
+        for variant_id in variants:
+            if variant_id == baseline_variant_id:
+                continue
+            treatment = by_variant_seed.get((variant_id, seed))
+            if treatment is None:
+                continue
+            row = {"seed": seed, "variant_id": variant_id}
+            for field in PAIRED_DELTA_FIELDS:
+                row[f"delta_{field}_vs_baseline"] = (
+                    float(treatment.get(field, np.nan))
+                    - float(baseline.get(field, np.nan))
+                )
+            paired.append(row)
+    return paired
+
+
+def _paired_summary(rows: Sequence[Mapping]) -> Dict:
+    variants = sorted({str(row["variant_id"]) for row in rows})
+    summary = {}
+    for variant_id in variants:
+        variant_rows = [row for row in rows if row["variant_id"] == variant_id]
+        summary[variant_id] = _numeric_summary(variant_rows)
+        for field in PAIRED_DELTA_FIELDS:
+            delta_key = f"delta_{field}_vs_baseline"
+            values = np.asarray(
+                [row.get(delta_key, np.nan) for row in variant_rows],
+                dtype=np.float64,
+            )
+            finite = values[np.isfinite(values)]
+            summary[variant_id][f"fraction_improved_{field}"] = (
+                float(np.mean(finite < 0.0)) if finite.size else np.nan
+            )
+    return summary
+
+
+def _mean_by_checkpoint(rows: Sequence[Mapping], variant_id: str, y_key: str):
+    variant_rows = [
+        row for row in rows
+        if row["variant_id"] == variant_id
+        and not bool(row.get("is_final_policy_evaluation", False))
+    ]
+    checkpoint_indices = sorted({int(row["checkpoint_index"]) for row in variant_rows})
+    xs, means, ses = [], [], []
+    for checkpoint_index in checkpoint_indices:
+        checkpoint_rows = [
+            row for row in variant_rows
+            if int(row["checkpoint_index"]) == checkpoint_index
+        ]
+        x_vals = np.asarray(
+            [row.get("nodes_touched", np.nan) for row in checkpoint_rows],
+            dtype=float,
+        )
+        y_vals = np.asarray(
+            [row.get(y_key, np.nan) for row in checkpoint_rows],
+            dtype=float,
+        )
+        finite = np.isfinite(x_vals) & np.isfinite(y_vals)
+        if not np.any(finite):
+            continue
+        xs.append(float(np.mean(x_vals[finite])))
+        means.append(float(np.mean(y_vals[finite])))
+        if np.count_nonzero(finite) > 1:
+            ses.append(float(np.std(y_vals[finite], ddof=1) / np.sqrt(np.count_nonzero(finite))))
+        else:
+            ses.append(0.0)
+    return np.asarray(xs), np.asarray(means), np.asarray(ses)
+
+
+def _variant_label(variant: Mapping) -> str:
+    return str(variant.get("variant_label") or variant["variant_id"])
+
+
+def _plot_final_exploitability(
+    run_dir: Path,
+    summary_rows: Sequence[Mapping],
+    variants: Sequence[Mapping],
+) -> None:
+    labels = [_variant_label(variant) for variant in variants]
+    means, ses = [], []
+    for variant in variants:
+        variant_id = str(variant["variant_id"])
+        values = np.asarray(
+            [
+                row.get("final_exploitability", np.nan)
+                for row in summary_rows
+                if row["variant_id"] == variant_id
+            ],
+            dtype=float,
+        )
+        finite = values[np.isfinite(values)]
+        means.append(float(np.mean(finite)) if finite.size else np.nan)
+        ses.append(
+            float(np.std(finite, ddof=1) / np.sqrt(finite.size))
+            if finite.size > 1
+            else 0.0
+        )
+
+    x = np.arange(len(labels))
+    fig, ax = plt.subplots(figsize=(9, 5))
+    ax.bar(x, means, yerr=ses, capsize=4)
+    ax.axhline(
+        NASH_EXPLOITABILITY_TARGET,
+        color="black",
+        linestyle="--",
+        linewidth=1,
+        label=NASH_EXPLOITABILITY_TARGET_LABEL,
+    )
+    ax.set_xticks(x)
+    ax.set_xticklabels(labels, rotation=15, ha="right")
+    ax.set_ylabel("Final exploitability (NashConv / 2)")
+    set_chart_title(ax, "ESCHER replay-capacity ablation: final exploitability")
+    ax.legend()
+    fig.tight_layout()
+    fig.savefig(run_dir / "final_exploitability_by_variant.png", dpi=200, bbox_inches="tight")
+    plt.close(fig)
+
+
+def _plot_curves(
+    run_dir: Path,
+    curve_rows: Sequence[Mapping],
+    variants: Sequence[Mapping],
+) -> None:
+    plot_specs = [
+        (
+            "exploitability",
+            "Exploitability (NashConv / 2)",
+            "ESCHER replay-capacity ablation: exploitability by nodes touched",
+            "exploitability_by_nodes.png",
+            NASH_EXPLOITABILITY_TARGET,
+            NASH_EXPLOITABILITY_TARGET_LABEL,
+        ),
+        (
+            "average_policy_value",
+            "Average-policy value",
+            "ESCHER replay-capacity ablation: average-policy value by nodes touched",
+            "average_policy_value_by_nodes.png",
+            LEDUC_GAME_VALUE_PLAYER_0,
+            AVERAGE_POLICY_VALUE_TARGET_LABEL,
+        ),
+        (
+            "policy_value_error",
+            "Absolute policy-value error",
+            "ESCHER replay-capacity ablation: policy-value error by nodes touched",
+            "policy_value_error_by_nodes.png",
+            None,
+            None,
+        ),
+    ]
+    for y_key, ylabel, title, filename, target, target_label in plot_specs:
+        fig, ax = plt.subplots(figsize=(9, 5))
+        plotted = False
+        for variant in variants:
+            variant_id = str(variant["variant_id"])
+            xs, means, ses = _mean_by_checkpoint(curve_rows, variant_id, y_key)
+            if xs.size == 0:
+                continue
+            plotted = True
+            ax.plot(xs, means, marker="o", linewidth=1.8, label=_variant_label(variant))
+            if np.any(ses > 0):
+                ax.fill_between(xs, means - ses, means + ses, alpha=0.15)
+        if not plotted:
+            plt.close(fig)
+            continue
+        if target is not None:
+            ax.axhline(
+                target,
+                color="black",
+                linestyle="--",
+                linewidth=1,
+                label=target_label,
+            )
+        ax.set_xlabel("Nodes touched")
+        ax.set_ylabel(ylabel)
+        set_chart_title(ax, title)
+        ax.legend(fontsize=8)
+        fig.tight_layout()
+        fig.savefig(run_dir / filename, dpi=200, bbox_inches="tight")
+        plt.close(fig)
+
+
+def _build_arg_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="Run the Leduc poker ESCHER replay-capacity ablation."
+    )
+    parser.add_argument("--output-root", default="outputs/replay_capacity_ablation")
+    parser.add_argument("--seeds", default=None)
+    parser.add_argument("--variant-ids", default=None)
+    parser.add_argument("--iterations", type=int, default=None)
+    parser.add_argument("--evaluation-interval", type=int, default=None)
+    parser.add_argument("--traversals", type=int, default=None)
+    parser.add_argument("--value-traversals", type=int, default=None)
+    parser.add_argument("--memory-capacity", type=int, default=None)
+    parser.add_argument("--batch-size-regret", type=int, default=None)
+    parser.add_argument("--batch-size-value", type=int, default=None)
+    parser.add_argument("--batch-size-average-policy", type=int, default=None)
+    parser.add_argument("--policy-network-train-steps", type=int, default=None)
+    parser.add_argument("--regret-network-train-steps", type=int, default=None)
+    parser.add_argument("--value-network-train-steps", type=int, default=None)
+    parser.add_argument("--policy-network-layers", default=None)
+    parser.add_argument("--regret-network-layers", default=None)
+    parser.add_argument("--value-network-layers", default=None)
+    parser.add_argument("--baseline-variant-id", default=BASELINE_VARIANT_ID)
+    parser.add_argument("--compute-exploitability", type=_str2bool, default=None)
+    parser.add_argument("--save-final-checkpoints", type=_str2bool, default=None)
+    parser.add_argument("--experiment-name", default=None)
+    parser.add_argument("--continue-on-error", type=_str2bool, default=True)
+    parser.add_argument("--verbose", action="store_true")
+    return parser
+
+
+def main(argv: Optional[List[str]] = None) -> int:
+    args = _build_arg_parser().parse_args(argv)
+    base_config = _build_base_config(args)
+    seeds = _parse_seeds(args.seeds)
+    variants = _selected_variants(args)
+    selected_ids = [str(variant["variant_id"]) for variant in variants]
+    baseline_variant_id = str(base_config.get("baseline_variant_id", BASELINE_VARIANT_ID))
+    if baseline_variant_id not in selected_ids:
+        baseline_variant_id = selected_ids[0]
+        base_config["baseline_variant_id"] = baseline_variant_id
+
+    run_dir = create_run_dir(args.output_root, base_config["experiment_name"])
+    _configure_logging(run_dir, args.verbose)
+
+    metadata = {
+        "base_config": base_config,
+        "seeds": seeds,
+        "selected_variant_ids": selected_ids,
+        "baseline_variant_id": baseline_variant_id,
+        "available_variants": list(VARIANTS),
+    }
+    _write_json(run_dir / "experiment_metadata.json", metadata)
+
+    _LOGGER.info("Export directory: %s", run_dir.resolve())
+    _LOGGER.info("Running seeds: %s", seeds)
+    _LOGGER.info("Selected variants: %s", selected_ids)
+    _LOGGER.info("Baseline variant: %s", baseline_variant_id)
+
+    results = []
+    failures = []
+    total = len(seeds) * len(variants)
+    with tqdm(total=total, desc="Replay-capacity variants") as progress:
+        for seed in seeds:
+            for variant in variants:
+                config = make_variant_config(base_config, variant)
+                try:
+                    result = run_single_seed_variant(seed, config, export_dir=run_dir)
+                    result["summary"] = _augment_summary(result["summary"], config)
+                    results.append(result)
+                    _LOGGER.info(
+                        "%s seed %s final exploitability %.6f",
+                        config["variant_id"],
+                        seed,
+                        result["summary"]["final_exploitability"],
+                    )
+                except Exception as exc:  # pragma: no cover - operational robustness
+                    failure = {
+                        "variant_id": variant["variant_id"],
+                        "seed": int(seed),
+                        "error": str(exc),
+                        "traceback": traceback.format_exc(),
+                    }
+                    failures.append(failure)
+                    _LOGGER.error(
+                        "Variant %s seed %s failed: %s",
+                        variant["variant_id"],
+                        seed,
+                        exc,
+                    )
+                    if not args.continue_on_error:
+                        break
+                finally:
+                    cleanup_tensorflow_memory()
+                    progress.update(1)
+            if failures and not args.continue_on_error:
+                break
+
+    if failures:
+        _write_json(run_dir / "failed_runs.json", failures)
+
+    if not results:
+        _LOGGER.error("No variants completed successfully.")
+        return 1
+
+    summary_rows = [result["summary"] for result in results]
+    curve_rows = [row for result in results for row in result["curves"]]
+    paired_rows = _paired_rows(summary_rows, baseline_variant_id)
+    aggregate = _aggregate_by_variant(summary_rows, variants)
+    paired_summary = _paired_summary(paired_rows)
+
+    _write_csv(run_dir / "variant_seed_summary.csv", summary_rows)
+    _write_csv(run_dir / "checkpoint_curves.csv", curve_rows)
+    _write_csv(run_dir / "paired_differences_vs_baseline.csv", paired_rows)
+    _write_json(run_dir / "aggregate_summary.json", aggregate)
+    _write_json(run_dir / "paired_difference_summary.json", paired_summary)
+    _write_json(
+        run_dir / "summary.json",
+        {
+            "variant_seed_summary": summary_rows,
+            "aggregate_summary": aggregate,
+            "paired_difference_summary": paired_summary,
+            "failed_runs": failures,
+        },
+    )
+
+    _plot_final_exploitability(run_dir, summary_rows, variants)
+    _plot_curves(run_dir, curve_rows, variants)
+
+    _LOGGER.info("Saved ablation outputs to: %s", run_dir.resolve())
+    return 0 if not failures else 2
+
+
+if __name__ == "__main__":  # pragma: no cover
+    raise SystemExit(main())
