@@ -21,6 +21,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         logger_name="escher_poker.experiment.regret_value_work_ablation",
         progress_label="Regret/value work variants",
         plot_title_prefix="ESCHER regret/value work ablation",
+        worker_module="experiments.leduc_poker.escher_regret_value_work_ablation.run",
         extra_summary_fields={
             "regret_traversals_variant": "num_traversals",
             "value_traversals_variant": "num_val_fn_traversals",

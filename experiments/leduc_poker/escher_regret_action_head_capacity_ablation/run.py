@@ -21,6 +21,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         logger_name="escher_poker.experiment.regret_action_head_capacity_ablation",
         progress_label="Regret action-head variants",
         plot_title_prefix="ESCHER regret action-head capacity ablation",
+        worker_module="experiments.leduc_poker.escher_regret_action_head_capacity_ablation.run",
         extra_summary_fields={
             "regret_head_depth_variant": "regret_network_head_depth",
             "regret_head_units_variant": "regret_network_head_units",
