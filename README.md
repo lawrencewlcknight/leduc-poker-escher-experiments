@@ -96,7 +96,8 @@ The repository is organised so that each experiment can be run independently whi
 │       ├── escher_learning_rate_ablation/            # Experiment 30
 │       ├── escher_replay_capacity_ablation/          # Experiment 31
 │       ├── escher_regret_value_work_ablation/        # Experiment 32
-│       └── escher_regret_action_head_capacity_ablation/ # Experiment 33
+│       ├── escher_regret_action_head_capacity_ablation/ # Experiment 33
+│       └── escher_regret_batch_size_ablation/        # Experiment 34
 ├── docs/
 │   └── OUTPUT_CONVENTIONS.md
 ├── notebooks/                                        # Original notebook archive
@@ -400,6 +401,34 @@ protocol remain fixed.
 **Question:** does increasing the capacity of the per-action regret head improve
 ESCHER's ability to model regret targets after the shared trunk?
 
+### 34. ESCHER candidate regret-batch-size ablation
+
+[`experiments/leduc_poker/escher_regret_batch_size_ablation/`](experiments/leduc_poker/escher_regret_batch_size_ablation/README.md)
+
+Compares the Experiment 28 candidate architecture against the same model with
+regret-network batch size increased from 256 to 512. Replay capacity remains at
+50,000 and the value-network batch remains 256, isolating the batch-size signal
+that was confounded with larger replay capacity in Experiment 31.
+
+**Question:** does increasing only the regret supervised batch size improve the
+Experiment 28 candidate architecture at the baseline replay capacity?
+
+Quick local smoke test:
+
+```bash
+python -m experiments.leduc_poker.escher_regret_batch_size_ablation.run \
+  --seeds 1234 \
+  --variant-ids baseline_regret_batch_256,regret_batch_512 \
+  --iterations 2 \
+  --traversals 2 \
+  --value-traversals 2 \
+  --policy-network-train-steps 1 \
+  --regret-network-train-steps 1 \
+  --value-network-train-steps 1 \
+  --evaluation-interval 1 \
+  --output-root outputs/smoke_tests
+```
+
 ## Setup
 
 Create and activate a Python 3.9 virtual environment. The repository contains
@@ -518,6 +547,9 @@ python -m experiments.leduc_poker.escher_regret_value_work_ablation.run
 
 # Experiment 33 — regret action-head capacity ablation on the candidate architecture
 python -m experiments.leduc_poker.escher_regret_action_head_capacity_ablation.run
+
+# Experiment 34 — regret-batch-size ablation on the candidate architecture
+python -m experiments.leduc_poker.escher_regret_batch_size_ablation.run
 ```
 
 For quick GCP smoke tests, first make sure the environment variables required
@@ -917,6 +949,22 @@ root. Each command submits a separate Google Batch job.
     --batch-size-average-policy 2 \
     --memory-capacity 128 \
     --output-root outputs/cloud/escher-smoke-exp33" \
+  "n2-standard-4" "3600" "4000" "16000" "100"
+
+# Experiment 34 smoke test
+./gcp/submit_batch_experiment.sh \
+  "escher-smoke-exp34-$(date +%Y%m%d-%H%M%S)" \
+  "/usr/bin/time -v python -m experiments.leduc_poker.escher_regret_batch_size_ablation.run \
+    --seeds 1234 \
+    --variant-ids baseline_regret_batch_256 \
+    --iterations 2 \
+    --traversals 2 \
+    --value-traversals 2 \
+    --policy-network-train-steps 1 \
+    --regret-network-train-steps 1 \
+    --value-network-train-steps 1 \
+    --evaluation-interval 1 \
+    --output-root outputs/cloud/escher-smoke-exp34" \
   "n2-standard-4" "3600" "4000" "16000" "100"
 ```
 

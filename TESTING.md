@@ -288,6 +288,7 @@ python -m experiments.leduc_poker.escher_residual_mlp_sweep.run
 python -m experiments.leduc_poker.escher_bottleneck_architecture_sweep.run
 python -m experiments.leduc_poker.escher_shared_trunk_head_sweep.run
 python -m experiments.leduc_poker.escher_candidate_architecture_multiseed.run
+python -m experiments.leduc_poker.escher_regret_batch_size_ablation.run
 ```
 
 The full runs use the aligned ESCHER baseline configuration. Most experiments default to the 10 thesis seeds; some targeted ablations use the smaller notebook seed set unless `--seeds` is supplied. These may take a long time.
