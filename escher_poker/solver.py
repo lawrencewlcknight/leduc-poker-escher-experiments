@@ -27,8 +27,29 @@ from .constants import (
     REGRET_TRAIN_SHUFFLE_SIZE,
     VALUE_TRAIN_SHUFFLE_SIZE,
 )
+from .fixed_sampling import fixed_sampling_policy
 from .networks import PolicyNetwork, RegretNetwork, ValueNetwork
-from .replay import ReservoirBuffer
+from .regret_targets import (
+    AUTHOR_STATE_VALUE,
+    PAPER_POLICY_WEIGHTED_Q,
+    VALID_REGRET_TARGET_BASELINES,
+    compute_regret_target,
+)
+from .regret_target_processing import (
+    BATCH_RMS,
+    BATCH_STANDARDIZE,
+    BATCH_STANDARDIZE_CLIP,
+    CLIP,
+    EMA_STD,
+    FIXED_UTILITY_SCALE,
+    VALID_REGRET_TARGET_PROCESSING,
+)
+from .replay import (
+    RESERVOIR,
+    VALID_REGRET_REPLAY_MODES,
+    ReservoirBuffer,
+    make_regret_replay_buffer,
+)
 
 class ESCHERSolver(policy.Policy):
     def __init__(self,
@@ -48,6 +69,9 @@ class ESCHERSolver(policy.Policy):
                  batch_size_value: int = 2024,
                  batch_size_average_policy: int = 10000,
                  memory_capacity: int = int(1e5),
+                 regret_replay_mode: str = RESERVOIR,
+                 regret_replay_rare_history_quota: int = 64,
+                 regret_replay_weight_floor: float = 1e-6,
                  policy_network_train_steps: int = 15000,
                  regret_network_train_steps: int = 5000,
                  value_network_train_steps: int = 4048,
@@ -68,6 +92,8 @@ class ESCHERSolver(policy.Policy):
                  clear_value_buffer: bool = True,
                  val_bootstrap=False,
                  use_balanced_probs: bool = False,
+                 balanced_sampling_mix: float = 1.0,
+                 track_sampling_coverage: bool = False,
                  val_op_prob=0.,
                  infer_device='cpu',
                  debug_val=False,
@@ -98,9 +124,12 @@ class ESCHERSolver(policy.Policy):
                  policy_network_head_units: int = None,
                  regret_network_head_units: int = None,
                  regret_network_output_mode: str = "direct",
+                 regret_target_baseline: str = AUTHOR_STATE_VALUE,
                  regret_target_processing: str = "none",
                  regret_target_clip_value: float = 1.0,
                  regret_target_standardize_epsilon: float = 1e-6,
+                 regret_target_fixed_scale: float = 1.0,
+                 regret_target_ema_decay: float = 0.99,
                  *args, **kwargs):
         """Initialize the ESCHER algorithm.
 
@@ -116,6 +145,14 @@ class ESCHERSolver(policy.Policy):
           batch_size_regret: (int) Batch size to sample from regret memories.
           batch_size_average_policy: (int) Batch size to sample from average_policy memories.
           memory_capacity: Number of samples that can be stored in memory.
+          regret_replay_mode: Regret replay backend. Supported values are
+            ``"reservoir"``, ``"all_samples"``, ``"infoset_stratified"``,
+            ``"rare_history_quota"``, and
+            ``"counterfactual_reach_weighted"``.
+          regret_replay_rare_history_quota: Minimum protected samples per
+            infoset in the rare-history-quota backend.
+          regret_replay_weight_floor: Minimum positive priority weight in the
+            counterfactual-reach-weighted backend.
           policy_network_train_steps: Number of policy network training steps (one
             policy training iteration at the end).
           regret_network_train_steps: Number of regret network training steps
@@ -130,21 +167,39 @@ class ESCHERSolver(policy.Policy):
             memory_capacity. All memories are saved to disk and not kept in memory
           save_regret_memories: If provided, regret memories are written to
             disk-backed TFRecord shards instead of in-memory reservoir buffers.
+          use_balanced_probs: Use the fixed leaf-balanced policy for actions
+            sampled on behalf of the updating player.
+          balanced_sampling_mix: Convex mixture weight between uniform actions
+            (0) and the exact leaf-balanced policy (1). This is used only when
+            ``use_balanced_probs`` is true.
+          track_sampling_coverage: Enumerate the fixed sampling policy and
+            collect empirical infoset-coverage diagnostics. Intended for small
+            games because exact tree enumeration is required.
           tfrecord_compression: Optional TFRecord compression type for
             disk-backed regret memory, for example ``"GZIP"``.
           regret_target_processing: Optional preprocessing applied only to
             sampled regret targets in the supervised regret-network loss.
             Replay buffers always retain raw regret targets. Supported values
-            are ``"none"``, ``"standardize"``, ``"clip"``, and
-            ``"standardize_clip"``.
+            are ``"none"``, ``"standardize"``, ``"clip"``,
+            ``"standardize_clip"``, ``"fixed_utility_scale"``,
+            ``"batch_rms"``, and ``"ema_std"``.
           regret_network_output_mode: Regret-network output head structure.
             ``"direct"`` keeps the current action outputs, ``"centered"``
             centres action outputs over legal actions, and ``"dueling"`` adds
             a scalar state-value head to centred legal-action outputs.
+          regret_target_baseline: Formula used for the raw instantaneous regret
+            target. ``"author_state_value"`` reproduces the public authors'
+            code, using ``Q_hat(h, a) - V_hat(h)``.
+            ``"paper_policy_weighted_q"`` implements Equation 7 / Algorithm 2,
+            using ``Q_hat(h, a) - sum_a pi(a|h) Q_hat(h, a)``.
           regret_target_clip_value: Symmetric clipping threshold for
             regret-target processing modes that include clipping.
           regret_target_standardize_epsilon: Minimum standard deviation used
             when standardising a batch of regret targets.
+          regret_target_fixed_scale: Positive game-wide divisor used by
+            ``"fixed_utility_scale"`` processing.
+          regret_target_ema_decay: Decay applied to the persistent first and
+            second target moments used by ``"ema_std"`` processing.
           average_policy_weighting: Weighting scheme for supervised
             average-policy regression samples. ``"linear"`` applies the
             standard CFR iteration weighting; ``"uniform"`` gives each sampled
@@ -168,6 +223,24 @@ class ESCHERSolver(policy.Policy):
         self._batch_size_regret = batch_size_regret
         self._batch_size_value = batch_size_value
         self._batch_size_average_policy = batch_size_average_policy
+        self._regret_replay_mode = str(regret_replay_mode).lower()
+        if self._regret_replay_mode not in VALID_REGRET_REPLAY_MODES:
+            raise ValueError(
+                "regret_replay_mode must be one of "
+                f"{sorted(VALID_REGRET_REPLAY_MODES)}, got "
+                f"{regret_replay_mode!r}."
+            )
+        self._regret_replay_rare_history_quota = int(
+            regret_replay_rare_history_quota
+        )
+        if self._regret_replay_rare_history_quota <= 0:
+            raise ValueError("regret_replay_rare_history_quota must be positive.")
+        self._regret_replay_weight_floor = float(regret_replay_weight_floor)
+        if (
+            not np.isfinite(self._regret_replay_weight_floor)
+            or self._regret_replay_weight_floor <= 0.0
+        ):
+            raise ValueError("regret_replay_weight_floor must be positive and finite.")
         self._policy_network_train_steps = policy_network_train_steps
         self._regret_network_train_steps = regret_network_train_steps
         self._value_network_train_steps = value_network_train_steps
@@ -195,17 +268,29 @@ class ESCHERSolver(policy.Policy):
                 f"{sorted(valid_regret_network_output_modes)}, got "
                 f"{regret_network_output_mode!r}."
             )
-        valid_regret_target_processing = {
-            "none",
-            "standardize",
-            "clip",
-            "standardize_clip",
-        }
+        self._regret_target_baseline = str(regret_target_baseline).lower()
+        if self._regret_target_baseline not in VALID_REGRET_TARGET_BASELINES:
+            raise ValueError(
+                "regret_target_baseline must be one of "
+                f"{sorted(VALID_REGRET_TARGET_BASELINES)}, got "
+                f"{regret_target_baseline!r}."
+            )
+        if self._regret_target_baseline == PAPER_POLICY_WEIGHTED_Q:
+            if not all_actions:
+                raise ValueError(
+                    "paper_policy_weighted_q requires all_actions=True so every "
+                    "legal Q-value is available."
+                )
+            if importance_sampling:
+                raise ValueError(
+                    "paper_policy_weighted_q requires importance_sampling=False; "
+                    "Equation 7 is the no-importance-sampling ESCHER target."
+                )
         self._regret_target_processing = str(regret_target_processing).lower()
-        if self._regret_target_processing not in valid_regret_target_processing:
+        if self._regret_target_processing not in VALID_REGRET_TARGET_PROCESSING:
             raise ValueError(
                 "regret_target_processing must be one of "
-                f"{sorted(valid_regret_target_processing)}, got "
+                f"{sorted(VALID_REGRET_TARGET_PROCESSING)}, got "
                 f"{regret_target_processing!r}."
             )
         self._regret_target_clip_value = float(regret_target_clip_value)
@@ -216,6 +301,15 @@ class ESCHERSolver(policy.Policy):
         )
         if self._regret_target_standardize_epsilon <= 0.0:
             raise ValueError("regret_target_standardize_epsilon must be positive.")
+        self._regret_target_fixed_scale = float(regret_target_fixed_scale)
+        if (
+            not np.isfinite(self._regret_target_fixed_scale)
+            or self._regret_target_fixed_scale <= 0.0
+        ):
+            raise ValueError("regret_target_fixed_scale must be positive and finite.")
+        self._regret_target_ema_decay = float(regret_target_ema_decay)
+        if not 0.0 <= self._regret_target_ema_decay < 1.0:
+            raise ValueError("regret_target_ema_decay must be in [0, 1).")
         self._num_players = game.num_players()
         self._last_raw_regret_target_variance = [
             np.nan for _ in range(self._num_players)
@@ -235,6 +329,16 @@ class ESCHERSolver(policy.Policy):
         self._last_regret_target_clip_fraction = [
             np.nan for _ in range(self._num_players)
         ]
+        self._last_regret_target_sign_flip_fraction = [
+            np.nan for _ in range(self._num_players)
+        ]
+        self._last_raw_regret_target_positive_fraction = [
+            np.nan for _ in range(self._num_players)
+        ]
+        self._last_processed_regret_target_positive_fraction = [
+            np.nan for _ in range(self._num_players)
+        ]
+        self._reset_regret_target_consistency_diagnostics()
         self._root_node = self._game.new_initial_state()
         self._embedding_size = len(self._root_node.information_state_tensor(0))
         hist_state = np.append(self._root_node.information_state_tensor(0),
@@ -260,6 +364,11 @@ class ESCHERSolver(policy.Policy):
         self._learning_rate = self._base_learning_rate
         self._save_regret_networks = save_regret_networks
         self._save_regret_memories = save_regret_memories
+        if self._save_regret_memories and self._regret_replay_mode != RESERVOIR:
+            raise ValueError(
+                "Non-reservoir regret replay modes require in-memory replay; "
+                "save_regret_memories must be unset."
+            )
         self._tfrecord_compression = tfrecord_compression
         self._regret_memories_tfrecord_dir = None
         self._regret_tfrecordfiles = [None for _ in range(self._num_players)]
@@ -284,7 +393,23 @@ class ESCHERSolver(policy.Policy):
         self._squared_errors = []
         self._squared_errors_child = []
         self._balanced_probs = {}
-        self._use_balanced_probs = use_balanced_probs
+        self._balanced_prob_players = {}
+        self._use_balanced_probs = bool(use_balanced_probs)
+        self._balanced_sampling_mix = float(balanced_sampling_mix)
+        if (
+            not np.isfinite(self._balanced_sampling_mix)
+            or not 0.0 <= self._balanced_sampling_mix <= 1.0
+        ):
+            raise ValueError("balanced_sampling_mix must be finite and in [0, 1].")
+        self._track_sampling_coverage = bool(track_sampling_coverage)
+        self._fixed_sampling_static_diagnostics = {}
+        self._sampling_coverage_counts = [
+            collections.Counter() for _ in range(self._num_players)
+        ]
+        self._sampling_reach_stats = [
+            {"count": 0, "sum": 0.0, "min": np.inf, "max": 0.0}
+            for _ in range(self._num_players)
+        ]
         self._val_op_prob = val_op_prob
         self._val_bootstrap = val_bootstrap
         self._debug_val = debug_val
@@ -355,6 +480,37 @@ class ESCHERSolver(policy.Policy):
 
         # Initialize policy network, loss, optimizer
         self._reinitialize_policy_network()
+
+        # Persistent target moments are solver state, not network state. They
+        # therefore survive Experiment 28's per-iteration network reinitialisation.
+        with tf.device(self._train_device):
+            self._regret_target_ema_mean = [
+                tf.Variable(
+                    0.0,
+                    trainable=False,
+                    dtype=tf.float32,
+                    name=f"regret_target_ema_mean_player_{player}",
+                )
+                for player in range(self._num_players)
+            ]
+            self._regret_target_ema_second_moment = [
+                tf.Variable(
+                    0.0,
+                    trainable=False,
+                    dtype=tf.float32,
+                    name=f"regret_target_ema_second_moment_player_{player}",
+                )
+                for player in range(self._num_players)
+            ]
+            self._regret_target_ema_initialized = [
+                tf.Variable(
+                    False,
+                    trainable=False,
+                    dtype=tf.bool,
+                    name=f"regret_target_ema_initialized_player_{player}",
+                )
+                for player in range(self._num_players)
+            ]
 
         # Initialize regret networks, losses, optimizers
         self._regret_networks = []
@@ -553,7 +709,13 @@ class ESCHERSolver(policy.Policy):
         """Create memory buffers and associated feature descriptions."""
         self._average_policy_memories = ReservoirBuffer(memory_capacity)
         self._regret_memories = [
-            ReservoirBuffer(memory_capacity) for _ in range(self._num_players)
+            make_regret_replay_buffer(
+                self._regret_replay_mode,
+                memory_capacity,
+                rare_history_quota=self._regret_replay_rare_history_quota,
+                weight_floor=self._regret_replay_weight_floor,
+            )
+            for _ in range(self._num_players)
         ]
         self._value_memory = ReservoirBuffer(memory_capacity)
         self._value_memory_test = ReservoirBuffer(memory_capacity)
@@ -623,6 +785,25 @@ class ESCHERSolver(policy.Policy):
         if self._save_regret_memories:
             return int(self._regret_memory_counts[player])
         return int(len(self._regret_memories[player].get_data()))
+
+    def get_regret_replay_diagnostics(self, player):
+        """Return backend-independent regret replay composition diagnostics."""
+        if self._save_regret_memories:
+            count = int(self._regret_memory_counts[player])
+            return {
+                "stored_count": count,
+                "stream_count": count,
+                "retention_fraction": 1.0 if count else 0.0,
+                "unique_infosets": np.nan,
+                "samples_per_infoset_min": np.nan,
+                "samples_per_infoset_mean": np.nan,
+                "samples_per_infoset_max": np.nan,
+                "samples_per_infoset_cv": np.nan,
+                "stored_weight_mean": np.nan,
+            }
+        diagnostics = dict(self._regret_memories[player].diagnostics())
+        diagnostics.setdefault("stored_weight_mean", np.nan)
+        return diagnostics
 
     def get_regret_memory_storage_bytes(self, player=None):
         if not self._save_regret_memories or not self._regret_memories_tfrecord_dir:
@@ -737,6 +918,69 @@ class ESCHERSolver(policy.Policy):
 
     def reset_squared_errors_child(self):
         self._squared_errors_child = []
+
+    def _reset_regret_target_consistency_diagnostics(self):
+        """Reset online raw-target diagnostics for the current ESCHER iteration."""
+        self._regret_target_consistency = [
+            {
+                "count": 0,
+                "bellman_residual_sum": 0.0,
+                "bellman_residual_abs_sum": 0.0,
+                "bellman_residual_sq_sum": 0.0,
+                "policy_weighted_target_abs_sum": 0.0,
+                "all_legal_targets_negative_count": 0,
+            }
+            for _ in range(self._num_players)
+        ]
+
+    def _record_regret_target_consistency(
+        self,
+        player,
+        target_result,
+        legal_actions_mask,
+    ):
+        """Accumulate Bellman and policy-centering diagnostics for one target."""
+        stats = self._regret_target_consistency[player]
+        residual = float(target_result.bellman_residual)
+        weighted_target = float(target_result.policy_weighted_target)
+        legal = np.asarray(legal_actions_mask, dtype=np.float64) > 0.0
+        legal_targets = np.asarray(target_result.target, dtype=np.float64)[legal]
+
+        stats["count"] += 1
+        stats["bellman_residual_sum"] += residual
+        stats["bellman_residual_abs_sum"] += abs(residual)
+        stats["bellman_residual_sq_sum"] += residual * residual
+        stats["policy_weighted_target_abs_sum"] += abs(weighted_target)
+        if legal_targets.size and np.all(legal_targets < 0.0):
+            stats["all_legal_targets_negative_count"] += 1
+
+    def _regret_target_consistency_summary(self, player):
+        """Return scalar diagnostics accumulated for ``player`` this iteration."""
+        stats = self._regret_target_consistency[player]
+        count = int(stats["count"])
+        if count == 0:
+            return {
+                "count": 0,
+                "bellman_residual_mean": np.nan,
+                "bellman_residual_abs_mean": np.nan,
+                "bellman_residual_rmse": np.nan,
+                "policy_weighted_target_abs_mean": np.nan,
+                "all_legal_targets_negative_fraction": np.nan,
+            }
+        return {
+            "count": count,
+            "bellman_residual_mean": stats["bellman_residual_sum"] / count,
+            "bellman_residual_abs_mean": stats["bellman_residual_abs_sum"] / count,
+            "bellman_residual_rmse": np.sqrt(
+                stats["bellman_residual_sq_sum"] / count
+            ),
+            "policy_weighted_target_abs_mean": (
+                stats["policy_weighted_target_abs_sum"] / count
+            ),
+            "all_legal_targets_negative_fraction": (
+                stats["all_legal_targets_negative_count"] / count
+            ),
+        }
 
     def clear_val_memories_test(self):
         self._value_memory_test.clear()
@@ -863,7 +1107,11 @@ class ESCHERSolver(policy.Policy):
         timestr = "{:%Y_%m_%d_%H_%M_%S}".format(datetime.now())
 
         if self._use_balanced_probs:
-            self._get_balanced_probs(self._root_node)
+            self._prepare_fixed_sampling_policy()
+        elif self._track_sampling_coverage:
+            self._fixed_sampling_static_diagnostics = (
+                self._compute_fixed_sampling_static_diagnostics()
+            )
 
         with tf.device(self._infer_device):
             with contextlib.ExitStack() as stack:
@@ -876,6 +1124,7 @@ class ESCHERSolver(policy.Policy):
 
                 for i in range(self._num_iterations + 1):
                     current_lr = self._set_learning_rate_for_iteration(i)
+                    self._reset_regret_target_consistency_diagnostics()
                     if self._verbose:
                         print(i)
                     if self._verbose and self._experiment_string is not None:
@@ -1036,6 +1285,31 @@ class ESCHERSolver(policy.Policy):
                         diagnostics["average_policy_buffer_size"].append(int(self.get_average_policy_memory_count()))
                         diagnostics["regret_buffer_size_player_0"].append(int(self.get_regret_memory_count(0)))
                         diagnostics["regret_buffer_size_player_1"].append(int(self.get_regret_memory_count(1)))
+                        for p in range(self._num_players):
+                            replay_diagnostics = self.get_regret_replay_diagnostics(p)
+                            for name in [
+                                "stream_count",
+                                "retention_fraction",
+                                "unique_infosets",
+                                "samples_per_infoset_min",
+                                "samples_per_infoset_mean",
+                                "samples_per_infoset_max",
+                                "samples_per_infoset_cv",
+                                "stored_weight_mean",
+                            ]:
+                                diagnostics[f"regret_replay_{name}_player_{p}"].append(
+                                    float(replay_diagnostics.get(name, np.nan))
+                                )
+                            if self._track_sampling_coverage:
+                                coverage = self.get_sampling_coverage_diagnostics(p)
+                                for name, value in coverage.items():
+                                    diagnostics[
+                                        f"sampling_coverage_{name}_player_{p}"
+                                    ].append(float(value))
+                        for name, value in (
+                            self._fixed_sampling_static_diagnostics.items()
+                        ):
+                            diagnostics[f"fixed_sampling_{name}"].append(float(value))
                         diagnostics["regret_storage_bytes_player_0"].append(int(self.get_regret_memory_storage_bytes(0)))
                         diagnostics["regret_storage_bytes_player_1"].append(int(self.get_regret_memory_storage_bytes(1)))
                         diagnostics["regret_storage_bytes_total"].append(int(self.get_regret_memory_storage_bytes()))
@@ -1049,8 +1323,33 @@ class ESCHERSolver(policy.Policy):
                         diagnostics["regret_target_standardization_mean_player_1"].append(float(self._last_regret_target_standardization_mean[1]))
                         diagnostics["regret_target_standardization_scale_player_0"].append(float(self._last_regret_target_standardization_scale[0]))
                         diagnostics["regret_target_standardization_scale_player_1"].append(float(self._last_regret_target_standardization_scale[1]))
+                        diagnostics["regret_target_processing_mean_player_0"].append(float(self._last_regret_target_standardization_mean[0]))
+                        diagnostics["regret_target_processing_mean_player_1"].append(float(self._last_regret_target_standardization_mean[1]))
+                        diagnostics["regret_target_processing_scale_player_0"].append(float(self._last_regret_target_standardization_scale[0]))
+                        diagnostics["regret_target_processing_scale_player_1"].append(float(self._last_regret_target_standardization_scale[1]))
                         diagnostics["regret_target_clip_fraction_player_0"].append(float(self._last_regret_target_clip_fraction[0]))
                         diagnostics["regret_target_clip_fraction_player_1"].append(float(self._last_regret_target_clip_fraction[1]))
+                        diagnostics["regret_target_sign_flip_fraction_player_0"].append(float(self._last_regret_target_sign_flip_fraction[0]))
+                        diagnostics["regret_target_sign_flip_fraction_player_1"].append(float(self._last_regret_target_sign_flip_fraction[1]))
+                        diagnostics["raw_regret_target_positive_fraction_player_0"].append(float(self._last_raw_regret_target_positive_fraction[0]))
+                        diagnostics["raw_regret_target_positive_fraction_player_1"].append(float(self._last_raw_regret_target_positive_fraction[1]))
+                        diagnostics["processed_regret_target_positive_fraction_player_0"].append(float(self._last_processed_regret_target_positive_fraction[0]))
+                        diagnostics["processed_regret_target_positive_fraction_player_1"].append(float(self._last_processed_regret_target_positive_fraction[1]))
+                        for p in range(self._num_players):
+                            consistency = self._regret_target_consistency_summary(p)
+                            diagnostics[f"regret_target_sample_count_player_{p}"].append(
+                                int(consistency["count"])
+                            )
+                            for name in [
+                                "bellman_residual_mean",
+                                "bellman_residual_abs_mean",
+                                "bellman_residual_rmse",
+                                "policy_weighted_target_abs_mean",
+                                "all_legal_targets_negative_fraction",
+                            ]:
+                                diagnostics[f"regret_target_{name}_player_{p}"].append(
+                                    float(consistency[name])
+                                )
                         diagnostics["peak_rss_mb"].append(float(self._current_rss_mb()))
                         diagnostics["value_buffer_size"].append(int(len(self.get_value_memory())))
                         diagnostics["value_test_buffer_size"].append(int(len(self.get_value_memory_test())))
@@ -1167,8 +1466,12 @@ class ESCHERSolver(policy.Policy):
         iteration,
         samp_regret,
         legal_actions_mask,
+        counterfactual_reach=1.0,
+        sampling_reach=1.0,
     ):
         """Adds regret data either to RAM replay or disk-backed TFRecord replay."""
+        infoset_key = np.asarray(info_state, dtype=np.float32).tobytes()
+        self._record_sampling_coverage(player, infoset_key, sampling_reach)
         serialized_example = self._serialize_regret_memory(
             info_state,
             iteration,
@@ -1185,7 +1488,14 @@ class ESCHERSolver(policy.Policy):
             writer.write(serialized_example)
             self._regret_memory_counts[player] += 1
         else:
-            self._regret_memories[player].add(serialized_example)
+            replay_weight = float(counterfactual_reach)
+            if not np.isfinite(replay_weight) or replay_weight <= 0.0:
+                replay_weight = self._regret_replay_weight_floor
+            self._regret_memories[player].add(
+                serialized_example,
+                key=infoset_key,
+                weight=max(replay_weight, self._regret_replay_weight_floor),
+            )
 
     def _serialize_regret_memory(self, info_state, iteration, samp_regret,
                                  legal_actions_mask):
@@ -1274,6 +1584,7 @@ class ESCHERSolver(policy.Policy):
         return val
 
     def _get_balanced_probs(self, state):
+        """Populate the fixed policy that gives every descendant leaf equal reach."""
         if state.is_terminal():
             return 1
         elif state.is_chance_node():
@@ -1290,8 +1601,158 @@ class ESCHERSolver(policy.Policy):
                 nodes = self._get_balanced_probs(state.child(action))
                 balanced_probs[action] = nodes
                 num_nodes += nodes
-            self._balanced_probs[state.information_state_string()] = balanced_probs / balanced_probs.sum()
+            balanced_probs /= balanced_probs.sum()
+            infoset_key = state.information_state_string()
+            cur_player = int(state.current_player())
+            previous = self._balanced_probs.get(infoset_key)
+            if previous is not None and not np.allclose(
+                previous,
+                balanced_probs,
+                rtol=0.0,
+                atol=1e-12,
+            ):
+                raise ValueError(
+                    "Leaf-balanced probabilities are inconsistent across "
+                    f"histories in infoset {infoset_key!r}."
+                )
+            previous_player = self._balanced_prob_players.get(infoset_key)
+            if previous_player is not None and previous_player != cur_player:
+                raise ValueError(
+                    "Information-state strings collide across players: "
+                    f"{infoset_key!r}."
+                )
+            self._balanced_probs[infoset_key] = balanced_probs
+            self._balanced_prob_players[infoset_key] = cur_player
             return num_nodes
+
+    def _fixed_sampling_policy(self, state):
+        """Return the configured fixed distribution at one decision state."""
+        legal_mask = np.asarray(state.legal_actions_mask(), dtype=np.float64)
+        if self._use_balanced_probs:
+            infoset_key = state.information_state_string()
+            if infoset_key not in self._balanced_probs:
+                raise RuntimeError(
+                    "Balanced sampling policy was not prepared before traversal."
+                )
+            balanced_probs = self._balanced_probs[infoset_key]
+            mix = self._balanced_sampling_mix
+        else:
+            balanced_probs = legal_mask
+            mix = 0.0
+        return fixed_sampling_policy(legal_mask, balanced_probs, mix)
+
+    def _prepare_fixed_sampling_policy(self):
+        """Build the immutable balanced table and optional exact diagnostics."""
+        self._balanced_probs = {}
+        self._balanced_prob_players = {}
+        self._get_balanced_probs(self._root_node)
+        if self._track_sampling_coverage:
+            self._fixed_sampling_static_diagnostics = (
+                self._compute_fixed_sampling_static_diagnostics()
+            )
+
+    def _compute_fixed_sampling_static_diagnostics(self):
+        """Enumerate own-policy reach to every player decision history."""
+        action_probabilities = []
+        own_history_reaches = [[] for _ in range(self._num_players)]
+        infosets = [set() for _ in range(self._num_players)]
+
+        def walk(state, own_reaches):
+            if state.is_terminal():
+                return
+            if state.is_chance_node():
+                for action in state.legal_actions():
+                    walk(state.child(action), own_reaches)
+                return
+
+            player = int(state.current_player())
+            infosets[player].add(state.information_state_string())
+            own_history_reaches[player].append(float(own_reaches[player]))
+            sampling_policy = self._fixed_sampling_policy(state)
+            legal_actions = state.legal_actions()
+            action_probabilities.extend(
+                float(sampling_policy[action]) for action in legal_actions
+            )
+            for action in legal_actions:
+                child_reaches = list(own_reaches)
+                child_reaches[player] *= float(sampling_policy[action])
+                walk(state.child(action), child_reaches)
+
+        walk(self._root_node, [1.0 for _ in range(self._num_players)])
+        diagnostics = {
+            "effective_balanced_mix": (
+                self._balanced_sampling_mix if self._use_balanced_probs else 0.0
+            ),
+            "legal_action_probability_min": (
+                float(np.min(action_probabilities))
+                if action_probabilities
+                else np.nan
+            ),
+        }
+        for player in range(self._num_players):
+            reaches = np.asarray(
+                own_history_reaches[player],
+                dtype=np.float64,
+            )
+            diagnostics[f"infoset_count_player_{player}"] = int(
+                len(infosets[player])
+            )
+            diagnostics[f"history_count_player_{player}"] = int(reaches.size)
+            diagnostics[f"own_history_reach_min_player_{player}"] = (
+                float(np.min(reaches)) if reaches.size else np.nan
+            )
+            diagnostics[f"own_history_reach_mean_player_{player}"] = (
+                float(np.mean(reaches)) if reaches.size else np.nan
+            )
+            diagnostics[f"own_history_reach_cv_player_{player}"] = (
+                float(np.std(reaches) / np.mean(reaches))
+                if reaches.size and np.mean(reaches) > 0.0
+                else np.nan
+            )
+        return diagnostics
+
+    def _record_sampling_coverage(self, player, infoset_key, sampling_reach):
+        if not self._track_sampling_coverage:
+            return
+        self._sampling_coverage_counts[player][infoset_key] += 1
+        reach = float(sampling_reach)
+        if not np.isfinite(reach) or reach < 0.0:
+            return
+        stats = self._sampling_reach_stats[player]
+        stats["count"] += 1
+        stats["sum"] += reach
+        stats["min"] = min(stats["min"], reach)
+        stats["max"] = max(stats["max"], reach)
+
+    def get_sampling_coverage_diagnostics(self, player):
+        """Return cumulative empirical fixed-sampling coverage diagnostics."""
+        counts = np.asarray(
+            list(self._sampling_coverage_counts[player].values()),
+            dtype=np.float64,
+        )
+        stats = self._sampling_reach_stats[player]
+        return {
+            "unique_infosets": int(counts.size),
+            "visits_min": float(np.min(counts)) if counts.size else 0.0,
+            "visits_mean": float(np.mean(counts)) if counts.size else 0.0,
+            "visits_max": float(np.max(counts)) if counts.size else 0.0,
+            "visits_cv": (
+                float(np.std(counts) / np.mean(counts))
+                if counts.size and np.mean(counts) > 0.0
+                else 0.0
+            ),
+            "observed_own_reach_min": (
+                float(stats["min"]) if stats["count"] else np.nan
+            ),
+            "observed_own_reach_mean": (
+                float(stats["sum"] / stats["count"])
+                if stats["count"]
+                else np.nan
+            ),
+            "observed_own_reach_max": (
+                float(stats["max"]) if stats["count"] else np.nan
+            ),
+        }
 
     def _traverse_game_tree(self, state, player, my_reach, opp_reach, sample_reach,
                             my_sample_reach, chance_reach, train_regret, train_value,
@@ -1341,10 +1802,8 @@ class ESCHERSolver(policy.Policy):
         _, policy = self._sample_action_from_regret(state, state.current_player())
 
         if cur_player == player or train_value:
-            uniform_policy = (np.array(state.legal_actions_mask()) / num_legal_actions)
-            if self._use_balanced_probs:
-                uniform_policy = self._balanced_probs[state.information_state_string()]
-            sample_policy = expl * uniform_policy + (1.0 - expl) * policy
+            fixed_policy = self._fixed_sampling_policy(state)
+            sample_policy = expl * fixed_policy + (1.0 - expl) * policy
         else:
             sample_policy = policy
 
@@ -1408,7 +1867,20 @@ class ESCHERSolver(policy.Policy):
                         cf_value = value_estimate
                     cf_action_values[action] = cf_action_value
 
-                samp_regret = (cf_action_values - cf_value) * state.legal_actions_mask(player)
+                legal_actions_mask = state.legal_actions_mask(player)
+                target_result = compute_regret_target(
+                    cf_action_values,
+                    cf_value,
+                    policy,
+                    legal_actions_mask,
+                    baseline_mode=self._regret_target_baseline,
+                )
+                samp_regret = target_result.target
+                self._record_regret_target_consistency(
+                    player,
+                    target_result,
+                    legal_actions_mask,
+                )
 
                 network_input = state.information_state_tensor()
 
@@ -1418,6 +1890,8 @@ class ESCHERSolver(policy.Policy):
                     self._iteration,
                     samp_regret,
                     state.legal_actions_mask(player),
+                    counterfactual_reach=opp_reach,
+                    sampling_reach=my_sample_reach,
                 )
             else:
                 obs_input = state.information_state_tensor(cur_player)
@@ -1529,7 +2003,19 @@ class ESCHERSolver(policy.Policy):
                 (oracle_child_value - child_values[sampled_action]) ** 2
             )
 
-        sampled_regret = (child_values - value_estimate) * legal_mask
+        target_result = compute_regret_target(
+            child_values,
+            value_estimate,
+            policy,
+            legal_mask,
+            baseline_mode=self._regret_target_baseline,
+        )
+        sampled_regret = target_result.target
+        self._record_regret_target_consistency(
+            cur_player,
+            target_result,
+            legal_mask,
+        )
         info_state = state.information_state_tensor(cur_player)
         self._add_to_regret_memory(
             cur_player,
@@ -1671,9 +2157,16 @@ class ESCHERSolver(policy.Policy):
                 num_parallel_reads=tf.data.experimental.AUTOTUNE,
             )
         else:
-            data = self.get_regret_memories(player)
-            data = tf.data.Dataset.from_tensor_slices(data)
-        data = data.shuffle(REGRET_TRAIN_SHUFFLE_SIZE)
+            stored_data = self.get_regret_memories(player)
+            data = tf.data.Dataset.from_tensor_slices(stored_data)
+            # A capped Experiment 28 reservoir is already smaller than the
+            # standard shuffle window. The uncapped arm eventually is not, so
+            # use its full population to avoid an insertion-order bias that
+            # would exclude the newest samples from a fixed training budget.
+            shuffle_size = max(REGRET_TRAIN_SHUFFLE_SIZE, len(stored_data))
+        if self._save_regret_memories:
+            shuffle_size = REGRET_TRAIN_SHUFFLE_SIZE
+        data = data.shuffle(shuffle_size)
         data = data.repeat()
         data = data.batch(self._batch_size_regret)
         data = data.map(self._deserialize_regret_memory)
@@ -1720,18 +2213,30 @@ class ESCHERSolver(policy.Policy):
             self._regret_target_standardize_epsilon,
             dtype=tf.float32,
         )
+        fixed_scale = tf.constant(
+            self._regret_target_fixed_scale,
+            dtype=tf.float32,
+        )
+        ema_decay = tf.constant(
+            self._regret_target_ema_decay,
+            dtype=tf.float32,
+        )
+        ema_mean = self._regret_target_ema_mean[player]
+        ema_second_moment = self._regret_target_ema_second_moment[player]
+        ema_initialized = self._regret_target_ema_initialized[player]
 
         @tf.function
         def train_step(info_states, regrets, iterations, masks, iteration):
             model = self._regret_networks_train[player]
             target_mask = tf.cast(masks, tf.float32)
-            processed_regrets = tf.cast(regrets, tf.float32)
-            processed_regrets = tf.where(
+            raw_regrets = tf.cast(regrets, tf.float32)
+            raw_regrets = tf.where(
                 target_mask > 0.0,
-                processed_regrets,
-                tf.zeros_like(processed_regrets),
+                raw_regrets,
+                tf.zeros_like(raw_regrets),
             )
-            legal_regrets = tf.boolean_mask(processed_regrets, target_mask > 0.0)
+            processed_regrets = raw_regrets
+            legal_regrets = tf.boolean_mask(raw_regrets, target_mask > 0.0)
 
             def safe_mean(values):
                 return tf.cond(
@@ -1750,7 +2255,7 @@ class ESCHERSolver(policy.Policy):
             raw_variance = safe_variance(legal_regrets)
             standardization_mean = tf.constant(0.0, dtype=tf.float32)
             standardization_scale = tf.constant(1.0, dtype=tf.float32)
-            if processing in {"standardize", "standardize_clip"}:
+            if processing in {BATCH_STANDARDIZE, BATCH_STANDARDIZE_CLIP}:
                 standardization_mean = safe_mean(legal_regrets)
                 standardization_scale = tf.maximum(
                     tf.sqrt(safe_variance(legal_regrets)),
@@ -1764,9 +2269,58 @@ class ESCHERSolver(policy.Policy):
                     processed_regrets,
                     tf.zeros_like(processed_regrets),
                 )
+            elif processing == FIXED_UTILITY_SCALE:
+                standardization_scale = fixed_scale
+                processed_regrets = tf.where(
+                    target_mask > 0.0,
+                    raw_regrets / standardization_scale,
+                    tf.zeros_like(raw_regrets),
+                )
+            elif processing == BATCH_RMS:
+                standardization_scale = tf.maximum(
+                    tf.sqrt(safe_mean(tf.square(legal_regrets))),
+                    standardize_epsilon,
+                )
+                processed_regrets = tf.where(
+                    target_mask > 0.0,
+                    raw_regrets / standardization_scale,
+                    tf.zeros_like(raw_regrets),
+                )
+            elif processing == EMA_STD:
+                batch_mean = safe_mean(legal_regrets)
+                batch_second_moment = safe_mean(tf.square(legal_regrets))
+                updated_mean = tf.cond(
+                    ema_initialized,
+                    lambda: (
+                        ema_decay * ema_mean
+                        + (1.0 - ema_decay) * batch_mean
+                    ),
+                    lambda: batch_mean,
+                )
+                updated_second_moment = tf.cond(
+                    ema_initialized,
+                    lambda: (
+                        ema_decay * ema_second_moment
+                        + (1.0 - ema_decay) * batch_second_moment
+                    ),
+                    lambda: batch_second_moment,
+                )
+                ema_mean.assign(updated_mean)
+                ema_second_moment.assign(updated_second_moment)
+                ema_initialized.assign(True)
+                persistent_variance = tf.maximum(
+                    updated_second_moment - tf.square(updated_mean),
+                    tf.square(standardize_epsilon),
+                )
+                standardization_scale = tf.sqrt(persistent_variance)
+                processed_regrets = tf.where(
+                    target_mask > 0.0,
+                    raw_regrets / standardization_scale,
+                    tf.zeros_like(raw_regrets),
+                )
 
             clip_fraction = tf.constant(0.0, dtype=tf.float32)
-            if processing in {"clip", "standardize_clip"}:
+            if processing in {CLIP, BATCH_STANDARDIZE_CLIP}:
                 before_clip = processed_regrets
                 processed_regrets = tf.clip_by_value(
                     processed_regrets,
@@ -1796,6 +2350,38 @@ class ESCHERSolver(policy.Policy):
             )
             processed_variance = safe_variance(processed_legal_regrets)
             processed_abs_mean = safe_mean(tf.abs(processed_legal_regrets))
+            legal_count = tf.maximum(
+                tf.reduce_sum(target_mask),
+                tf.constant(1.0, dtype=tf.float32),
+            )
+            raw_positive_fraction = (
+                tf.reduce_sum(
+                    tf.cast(
+                        tf.logical_and(target_mask > 0.0, raw_regrets > 0.0),
+                        tf.float32,
+                    )
+                )
+                / legal_count
+            )
+            processed_positive_fraction = (
+                tf.reduce_sum(
+                    tf.cast(
+                        tf.logical_and(
+                            target_mask > 0.0,
+                            processed_regrets > 0.0,
+                        ),
+                        tf.float32,
+                    )
+                )
+                / legal_count
+            )
+            sign_changed = tf.logical_and(
+                target_mask > 0.0,
+                tf.not_equal(tf.sign(raw_regrets), tf.sign(processed_regrets)),
+            )
+            sign_flip_fraction = (
+                tf.reduce_sum(tf.cast(sign_changed, tf.float32)) / legal_count
+            )
             with tf.GradientTape() as tape:
                 preds = model((info_states, masks), training=True)
                 main_loss = self._loss_regrets[player](
@@ -1816,6 +2402,9 @@ class ESCHERSolver(policy.Policy):
                 standardization_mean,
                 standardization_scale,
                 clip_fraction,
+                sign_flip_fraction,
+                raw_positive_fraction,
+                processed_positive_fraction,
             )
 
         return train_step
@@ -1896,6 +2485,9 @@ class ESCHERSolver(policy.Policy):
             except Exception:
                 return float(np.asarray(value))
 
+        sign_flip_fractions = []
+        raw_positive_fractions = []
+        processed_positive_fractions = []
         with tf.device(self._train_device):
             tfit = tf.constant(self._iteration, dtype=tf.float32)
             data = self._get_regret_dataset(player)
@@ -1908,6 +2500,9 @@ class ESCHERSolver(policy.Policy):
                     standardization_mean,
                     standardization_scale,
                     clip_fraction,
+                    sign_flip_fraction,
+                    raw_positive_fraction,
+                    processed_positive_fraction,
                 ) = self._regret_train_step[player](*d, tfit)
                 self._last_raw_regret_target_variance[player] = _to_float(
                     raw_variance
@@ -1927,6 +2522,22 @@ class ESCHERSolver(policy.Policy):
                 self._last_regret_target_clip_fraction[player] = _to_float(
                     clip_fraction
                 )
+                sign_flip_fractions.append(_to_float(sign_flip_fraction))
+                raw_positive_fractions.append(_to_float(raw_positive_fraction))
+                processed_positive_fractions.append(
+                    _to_float(processed_positive_fraction)
+                )
+
+        if sign_flip_fractions:
+            self._last_regret_target_sign_flip_fraction[player] = float(
+                np.mean(sign_flip_fractions)
+            )
+            self._last_raw_regret_target_positive_fraction[player] = float(
+                np.mean(raw_positive_fractions)
+            )
+            self._last_processed_regret_target_positive_fraction[player] = float(
+                np.mean(processed_positive_fractions)
+            )
 
         self._regret_networks[player].set_weights(
             self._regret_networks_train[player].get_weights())
@@ -2028,17 +2639,55 @@ class ESCHERSolver(policy.Policy):
             "regret_add_calls": [int(self._regret_memories[p].get_num_calls()) for p in range(self._num_players)],
             "value_add_calls": int(self._value_memory.get_num_calls()),
             "value_test_add_calls": int(self._value_memory_test.get_num_calls()),
+            "regret_replay_state": [
+                self._regret_memories[p].state_dict()
+                for p in range(self._num_players)
+            ],
+            "sampling_coverage_counts": [
+                dict(counts) for counts in self._sampling_coverage_counts
+            ],
+            "sampling_reach_stats": [
+                dict(stats) for stats in self._sampling_reach_stats
+            ],
+
+            # Persistent scale-only target-processing state.
+            "regret_target_ema_mean": [
+                float(value.numpy()) for value in self._regret_target_ema_mean
+            ],
+            "regret_target_ema_second_moment": [
+                float(value.numpy())
+                for value in self._regret_target_ema_second_moment
+            ],
+            "regret_target_ema_initialized": [
+                bool(value.numpy())
+                for value in self._regret_target_ema_initialized
+            ],
 
             # Light metadata for sanity checks / debugging
             "meta": {
                 "num_players": int(self._num_players),
                 "num_actions": int(self._num_actions),
                 "regret_network_output_mode": self._regret_network_output_mode,
+                "regret_target_baseline": self._regret_target_baseline,
                 "regret_target_processing": self._regret_target_processing,
                 "regret_target_clip_value": float(self._regret_target_clip_value),
                 "regret_target_standardize_epsilon": float(
                     self._regret_target_standardize_epsilon
                 ),
+                "regret_target_fixed_scale": float(
+                    self._regret_target_fixed_scale
+                ),
+                "regret_target_ema_decay": float(self._regret_target_ema_decay),
+                "regret_replay_mode": self._regret_replay_mode,
+                "regret_replay_rare_history_quota": int(
+                    self._regret_replay_rare_history_quota
+                ),
+                "regret_replay_weight_floor": float(
+                    self._regret_replay_weight_floor
+                ),
+                "use_balanced_probs": bool(self._use_balanced_probs),
+                "balanced_sampling_mix": float(self._balanced_sampling_mix),
+                "track_sampling_coverage": bool(self._track_sampling_coverage),
                 "average_policy_weighting": self._average_policy_weighting,
             },
         }
@@ -2100,23 +2749,67 @@ class ESCHERSolver(policy.Policy):
         # ----- restore buffers (serialized tf.train.Example bytes) -----
         if "avg_policy_data" in ckpt:
             self._average_policy_memories._data = list(ckpt["avg_policy_data"])
+            self._average_policy_memories._keys = [
+                None for _ in self._average_policy_memories._data
+            ]
             if "avg_policy_add_calls" in ckpt:
                 self._average_policy_memories._add_calls = int(ckpt["avg_policy_add_calls"])
 
-        if "regret_data" in ckpt:
+        if "regret_replay_state" in ckpt:
+            for p, state in enumerate(ckpt["regret_replay_state"]):
+                if p < self._num_players:
+                    self._regret_memories[p].load_state_dict(state)
+        elif "regret_data" in ckpt:
             for p in range(min(self._num_players, len(ckpt["regret_data"]))):
-                self._regret_memories[p]._data = list(ckpt["regret_data"][p])
-                if "regret_add_calls" in ckpt and p < len(ckpt["regret_add_calls"]):
-                    self._regret_memories[p]._add_calls = int(ckpt["regret_add_calls"][p])
+                state = {
+                    "data": list(ckpt["regret_data"][p]),
+                    "add_calls": (
+                        int(ckpt["regret_add_calls"][p])
+                        if "regret_add_calls" in ckpt
+                        and p < len(ckpt["regret_add_calls"])
+                        else len(ckpt["regret_data"][p])
+                    ),
+                }
+                if self._regret_replay_mode == RESERVOIR:
+                    self._regret_memories[p].load_state_dict(state)
+                else:
+                    self._regret_memories[p].clear()
+                    for element in state["data"]:
+                        self._regret_memories[p].add(element)
 
         if "value_data" in ckpt:
             self._value_memory._data = list(ckpt["value_data"])
+            self._value_memory._keys = [None for _ in self._value_memory._data]
             if "value_add_calls" in ckpt:
                 self._value_memory._add_calls = int(ckpt["value_add_calls"])
 
         if "value_test_data" in ckpt:
             self._value_memory_test._data = list(ckpt["value_test_data"])
+            self._value_memory_test._keys = [
+                None for _ in self._value_memory_test._data
+            ]
             if "value_test_add_calls" in ckpt:
                 self._value_memory_test._add_calls = int(ckpt["value_test_add_calls"])
+
+        if "sampling_coverage_counts" in ckpt:
+            self._sampling_coverage_counts = [
+                collections.Counter(counts)
+                for counts in ckpt["sampling_coverage_counts"]
+            ]
+        if "sampling_reach_stats" in ckpt:
+            self._sampling_reach_stats = [
+                dict(stats) for stats in ckpt["sampling_reach_stats"]
+            ]
+
+        for key, variables in [
+            ("regret_target_ema_mean", self._regret_target_ema_mean),
+            (
+                "regret_target_ema_second_moment",
+                self._regret_target_ema_second_moment,
+            ),
+            ("regret_target_ema_initialized", self._regret_target_ema_initialized),
+        ]:
+            for variable, value in zip(variables, ckpt.get(key, [])):
+                variable.assign(value)
 
         return self

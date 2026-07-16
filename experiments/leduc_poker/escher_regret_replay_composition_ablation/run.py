@@ -1,0 +1,70 @@
+"""CLI for Experiment 38 ESCHER regret replay composition ablation."""
+
+from __future__ import annotations
+
+from typing import List, Optional
+
+from experiments.leduc_poker.escher_variant_ablation_runner import (
+    run_variant_ablation,
+)
+
+from .config import BASELINE_VARIANT_ID, DEFAULT_CONFIG, DEFAULT_SEEDS, VARIANTS
+
+
+REPLAY_CURVE_PLOT_SPECS = [
+    (
+        "regret_buffer_size_player_0",
+        "Stored player-0 regret samples",
+        "ESCHER replay ablation: regret buffer size by nodes touched",
+        "regret_buffer_size_player_0_by_nodes.png",
+        None,
+        None,
+    ),
+    (
+        "regret_replay_retention_fraction_player_0",
+        "Retained fraction of player-0 regret stream",
+        "ESCHER replay ablation: retention fraction by nodes touched",
+        "regret_replay_retention_fraction_player_0_by_nodes.png",
+        1.0,
+        "Every sample retained",
+    ),
+    (
+        "regret_replay_samples_per_infoset_cv_player_0",
+        "CV of stored samples per player-0 infoset",
+        "ESCHER replay ablation: infoset imbalance by nodes touched",
+        "regret_replay_infoset_cv_player_0_by_nodes.png",
+        None,
+        None,
+    ),
+    (
+        "regret_replay_stored_weight_mean_player_0",
+        "Mean stored player-0 counterfactual reach",
+        "ESCHER replay ablation: stored reach by nodes touched",
+        "regret_replay_stored_reach_player_0_by_nodes.png",
+        None,
+        None,
+    ),
+]
+
+
+def main(argv: Optional[List[str]] = None) -> int:
+    return run_variant_ablation(
+        argv,
+        default_config=DEFAULT_CONFIG,
+        default_seeds=DEFAULT_SEEDS,
+        variants=VARIANTS,
+        baseline_variant_id=BASELINE_VARIANT_ID,
+        output_root="outputs/regret_replay_composition_ablation",
+        description="Run the Leduc poker ESCHER regret replay composition ablation.",
+        logger_name="escher_poker.experiment.regret_replay_composition_ablation",
+        progress_label="Regret replay variants",
+        plot_title_prefix="ESCHER regret replay composition ablation",
+        worker_module=(
+            "experiments.leduc_poker.escher_regret_replay_composition_ablation.run"
+        ),
+        extra_curve_plot_specs=REPLAY_CURVE_PLOT_SPECS,
+    )
+
+
+if __name__ == "__main__":  # pragma: no cover
+    raise SystemExit(main())

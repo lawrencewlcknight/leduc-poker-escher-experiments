@@ -54,6 +54,13 @@ def make_escher_solver(
         batch_size_value=int(config["batch_size_value"]),
         batch_size_average_policy=int(config["batch_size_average_policy"]),
         memory_capacity=int(config["memory_capacity"]),
+        regret_replay_mode=str(config.get("regret_replay_mode", "reservoir")),
+        regret_replay_rare_history_quota=int(
+            config.get("regret_replay_rare_history_quota", 64)
+        ),
+        regret_replay_weight_floor=float(
+            config.get("regret_replay_weight_floor", 1e-6)
+        ),
         policy_network_train_steps=int(config["policy_network_train_steps"]),
         regret_network_train_steps=int(config["regret_network_train_steps"]),
         value_network_train_steps=int(config["value_network_train_steps"]),
@@ -77,6 +84,10 @@ def make_escher_solver(
         clear_value_buffer=bool(config.get("clear_value_buffer", True)),
         val_bootstrap=bool(config.get("val_bootstrap", False)),
         use_balanced_probs=bool(config.get("use_balanced_probs", False)),
+        balanced_sampling_mix=float(config.get("balanced_sampling_mix", 1.0)),
+        track_sampling_coverage=bool(
+            config.get("track_sampling_coverage", False)
+        ),
         val_op_prob=float(config.get("val_op_prob", 0.0)),
         all_actions=bool(config.get("all_actions", True)),
         use_reach_weighted_avg_policy_loss=bool(
@@ -128,10 +139,19 @@ def make_escher_solver(
         regret_network_output_mode=str(
             config.get("regret_network_output_mode", "direct")
         ),
+        regret_target_baseline=str(
+            config.get("regret_target_baseline", "author_state_value")
+        ),
         regret_target_processing=str(config.get("regret_target_processing", "none")),
         regret_target_clip_value=float(config.get("regret_target_clip_value", 1.0)),
         regret_target_standardize_epsilon=float(
             config.get("regret_target_standardize_epsilon", 1e-6)
+        ),
+        regret_target_fixed_scale=float(
+            config.get("regret_target_fixed_scale", 1.0)
+        ),
+        regret_target_ema_decay=float(
+            config.get("regret_target_ema_decay", 0.99)
         ),
     )
 
@@ -472,11 +492,77 @@ def run_single_seed_variant(
             "regret_target_standardization_mean_player_1",
             "regret_target_standardization_scale_player_0",
             "regret_target_standardization_scale_player_1",
+            "regret_target_processing_mean_player_0",
+            "regret_target_processing_mean_player_1",
+            "regret_target_processing_scale_player_0",
+            "regret_target_processing_scale_player_1",
             "regret_target_clip_fraction_player_0",
             "regret_target_clip_fraction_player_1",
+            "regret_target_sign_flip_fraction_player_0",
+            "regret_target_sign_flip_fraction_player_1",
+            "raw_regret_target_positive_fraction_player_0",
+            "raw_regret_target_positive_fraction_player_1",
+            "processed_regret_target_positive_fraction_player_0",
+            "processed_regret_target_positive_fraction_player_1",
+            "regret_target_sample_count_player_0",
+            "regret_target_sample_count_player_1",
+            "regret_target_bellman_residual_mean_player_0",
+            "regret_target_bellman_residual_mean_player_1",
+            "regret_target_bellman_residual_abs_mean_player_0",
+            "regret_target_bellman_residual_abs_mean_player_1",
+            "regret_target_bellman_residual_rmse_player_0",
+            "regret_target_bellman_residual_rmse_player_1",
+            "regret_target_policy_weighted_target_abs_mean_player_0",
+            "regret_target_policy_weighted_target_abs_mean_player_1",
+            "regret_target_all_legal_targets_negative_fraction_player_0",
+            "regret_target_all_legal_targets_negative_fraction_player_1",
             "average_policy_buffer_size",
             "regret_buffer_size_player_0",
             "regret_buffer_size_player_1",
+            "regret_replay_stream_count_player_0",
+            "regret_replay_stream_count_player_1",
+            "regret_replay_retention_fraction_player_0",
+            "regret_replay_retention_fraction_player_1",
+            "regret_replay_unique_infosets_player_0",
+            "regret_replay_unique_infosets_player_1",
+            "regret_replay_samples_per_infoset_min_player_0",
+            "regret_replay_samples_per_infoset_min_player_1",
+            "regret_replay_samples_per_infoset_mean_player_0",
+            "regret_replay_samples_per_infoset_mean_player_1",
+            "regret_replay_samples_per_infoset_max_player_0",
+            "regret_replay_samples_per_infoset_max_player_1",
+            "regret_replay_samples_per_infoset_cv_player_0",
+            "regret_replay_samples_per_infoset_cv_player_1",
+            "regret_replay_stored_weight_mean_player_0",
+            "regret_replay_stored_weight_mean_player_1",
+            "fixed_sampling_effective_balanced_mix",
+            "fixed_sampling_legal_action_probability_min",
+            "fixed_sampling_infoset_count_player_0",
+            "fixed_sampling_infoset_count_player_1",
+            "fixed_sampling_history_count_player_0",
+            "fixed_sampling_history_count_player_1",
+            "fixed_sampling_own_history_reach_min_player_0",
+            "fixed_sampling_own_history_reach_min_player_1",
+            "fixed_sampling_own_history_reach_mean_player_0",
+            "fixed_sampling_own_history_reach_mean_player_1",
+            "fixed_sampling_own_history_reach_cv_player_0",
+            "fixed_sampling_own_history_reach_cv_player_1",
+            "sampling_coverage_unique_infosets_player_0",
+            "sampling_coverage_unique_infosets_player_1",
+            "sampling_coverage_visits_min_player_0",
+            "sampling_coverage_visits_min_player_1",
+            "sampling_coverage_visits_mean_player_0",
+            "sampling_coverage_visits_mean_player_1",
+            "sampling_coverage_visits_max_player_0",
+            "sampling_coverage_visits_max_player_1",
+            "sampling_coverage_visits_cv_player_0",
+            "sampling_coverage_visits_cv_player_1",
+            "sampling_coverage_observed_own_reach_min_player_0",
+            "sampling_coverage_observed_own_reach_min_player_1",
+            "sampling_coverage_observed_own_reach_mean_player_0",
+            "sampling_coverage_observed_own_reach_mean_player_1",
+            "sampling_coverage_observed_own_reach_max_player_0",
+            "sampling_coverage_observed_own_reach_max_player_1",
             "value_buffer_size",
             "value_test_buffer_size",
         ]:

@@ -59,12 +59,18 @@ DEFAULT_SUMMARY_HP_FIELDS = [
     "expl",
     "val_expl",
     "average_policy_weighting",
+    "use_balanced_probs",
+    "balanced_sampling_mix",
+    "track_sampling_coverage",
     "learning_rate",
     "learning_rate_schedule",
     "learning_rate_end",
     "learning_rate_decay_rate",
     "learning_rate_warmup_iterations",
     "memory_capacity",
+    "regret_replay_mode",
+    "regret_replay_rare_history_quota",
+    "regret_replay_weight_floor",
     "batch_size_regret",
     "batch_size_value",
     "batch_size_average_policy",
@@ -88,9 +94,12 @@ DEFAULT_SUMMARY_HP_FIELDS = [
     "policy_network_head_units",
     "regret_network_head_units",
     "regret_network_output_mode",
+    "regret_target_baseline",
     "regret_target_processing",
     "regret_target_clip_value",
     "regret_target_standardize_epsilon",
+    "regret_target_fixed_scale",
+    "regret_target_ema_decay",
     "reinitialize_regret_networks",
     "reinitialize_value_network",
 ]
@@ -195,6 +204,8 @@ def _apply_cli_overrides(config: Dict, args) -> Dict:
         "num_val_fn_traversals": args.value_traversals,
         "learning_rate": args.learning_rate,
         "memory_capacity": args.memory_capacity,
+        "regret_replay_rare_history_quota": args.regret_replay_rare_history_quota,
+        "regret_replay_weight_floor": args.regret_replay_weight_floor,
         "batch_size_regret": args.batch_size_regret,
         "batch_size_value": args.batch_size_value,
         "batch_size_average_policy": args.batch_size_average_policy,
@@ -205,6 +216,8 @@ def _apply_cli_overrides(config: Dict, args) -> Dict:
         "regret_network_layers": _parse_int_tuple(args.regret_network_layers),
         "value_network_layers": _parse_int_tuple(args.value_network_layers),
         "regret_target_standardize_epsilon": args.regret_target_standardize_epsilon,
+        "regret_target_fixed_scale": args.regret_target_fixed_scale,
+        "regret_target_ema_decay": args.regret_target_ema_decay,
         "compute_exploitability": args.compute_exploitability,
         "save_final_checkpoints": args.save_final_checkpoints,
         "baseline_variant_id": args.baseline_variant_id,
@@ -403,6 +416,7 @@ def _plot_curves(
     curve_rows: Sequence[Mapping],
     variants: Sequence[Mapping],
     plot_title_prefix: str,
+    extra_plot_specs: Sequence = (),
 ) -> None:
     plot_specs = [
         (
@@ -429,7 +443,7 @@ def _plot_curves(
             None,
             None,
         ),
-    ]
+    ] + list(extra_plot_specs)
     for y_key, ylabel, title, filename, target, target_label in plot_specs:
         fig, ax = plt.subplots(figsize=(9, 5))
         plotted = False
@@ -478,6 +492,8 @@ def _build_arg_parser(
     parser.add_argument("--value-traversals", type=int, default=None)
     parser.add_argument("--learning-rate", type=float, default=None)
     parser.add_argument("--memory-capacity", type=int, default=None)
+    parser.add_argument("--regret-replay-rare-history-quota", type=int, default=None)
+    parser.add_argument("--regret-replay-weight-floor", type=float, default=None)
     parser.add_argument("--batch-size-regret", type=int, default=None)
     parser.add_argument("--batch-size-value", type=int, default=None)
     parser.add_argument("--batch-size-average-policy", type=int, default=None)
@@ -488,6 +504,8 @@ def _build_arg_parser(
     parser.add_argument("--regret-network-layers", default=None)
     parser.add_argument("--value-network-layers", default=None)
     parser.add_argument("--regret-target-standardize-epsilon", type=float, default=None)
+    parser.add_argument("--regret-target-fixed-scale", type=float, default=None)
+    parser.add_argument("--regret-target-ema-decay", type=float, default=None)
     parser.add_argument("--baseline-variant-id", default=baseline_variant_id)
     parser.add_argument("--compute-exploitability", type=_str2bool, default=None)
     parser.add_argument("--save-final-checkpoints", type=_str2bool, default=None)
@@ -619,6 +637,8 @@ def run_variant_ablation(
     summary_hp_fields: Sequence[str] = DEFAULT_SUMMARY_HP_FIELDS,
     paired_delta_fields: Sequence[str] = DEFAULT_PAIRED_DELTA_FIELDS,
     extra_summary_fields: Mapping[str, str] = (),
+    additional_paired_baseline_ids: Sequence[str] = (),
+    extra_curve_plot_specs: Sequence = (),
 ) -> int:
     parser = _build_arg_parser(
         description=description,
@@ -649,6 +669,7 @@ def run_variant_ablation(
         "seeds": seeds,
         "selected_variant_ids": selected_ids,
         "baseline_variant_id": active_baseline_id,
+        "additional_paired_baseline_ids": list(additional_paired_baseline_ids),
         "available_variants": list(variants),
         "subprocess_isolation_enabled": bool(subprocess_isolation_enabled),
         "incremental_outputs": {
@@ -731,6 +752,27 @@ def run_variant_ablation(
     paired_rows = _paired_rows(summary_rows, active_baseline_id, paired_delta_fields)
     aggregate = _aggregate_by_variant(summary_rows, selected_variants)
     paired_summary = _paired_summary(paired_rows, paired_delta_fields)
+    additional_paired_summaries = {}
+    for contrast_baseline_id in additional_paired_baseline_ids:
+        contrast_baseline_id = str(contrast_baseline_id)
+        if contrast_baseline_id not in selected_ids:
+            continue
+        contrast_rows = _paired_rows(
+            summary_rows,
+            contrast_baseline_id,
+            paired_delta_fields,
+        )
+        contrast_summary = _paired_summary(contrast_rows, paired_delta_fields)
+        safe_baseline_id = _safe_stem(contrast_baseline_id)
+        _write_csv(
+            run_dir / f"paired_differences_vs_{safe_baseline_id}.csv",
+            contrast_rows,
+        )
+        _write_json(
+            run_dir / f"paired_difference_summary_vs_{safe_baseline_id}.json",
+            contrast_summary,
+        )
+        additional_paired_summaries[contrast_baseline_id] = contrast_summary
 
     _write_csv(run_dir / "variant_seed_summary.csv", summary_rows)
     _write_csv(run_dir / "checkpoint_curves.csv", curve_rows)
@@ -743,6 +785,7 @@ def run_variant_ablation(
             "variant_seed_summary": summary_rows,
             "aggregate_summary": aggregate,
             "paired_difference_summary": paired_summary,
+            "additional_paired_difference_summaries": additional_paired_summaries,
             "failed_runs": failures,
         },
     )
@@ -753,7 +796,13 @@ def run_variant_ablation(
         selected_variants,
         plot_title_prefix,
     )
-    _plot_curves(run_dir, curve_rows, selected_variants, plot_title_prefix)
+    _plot_curves(
+        run_dir,
+        curve_rows,
+        selected_variants,
+        plot_title_prefix,
+        extra_plot_specs=extra_curve_plot_specs,
+    )
 
     logger.info("Saved ablation outputs to: %s", run_dir.resolve())
     return 0 if not failures else 2

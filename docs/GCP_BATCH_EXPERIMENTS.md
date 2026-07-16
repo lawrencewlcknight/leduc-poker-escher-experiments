@@ -604,6 +604,18 @@ Available ESCHER experiment modules:
 | 25. Average-policy weighting ablation | `escher_average_policy_weighting_ablation` |
 | 26. Factorised regret-head ablation | `escher_factorised_regret_head_ablation` |
 | 27. Action-head LayerNorm/residual-LN ablation | `escher_action_head_layer_norm_residual_ablation` |
+| 28. Candidate architecture multi-seed validation | `escher_candidate_architecture_multiseed` |
+| 29. Candidate reinitialisation ablation | `escher_reinitialisation_ablation` |
+| 30. Candidate learning-rate ablation | `escher_learning_rate_ablation` |
+| 31. Candidate replay-capacity ablation | `escher_replay_capacity_ablation` |
+| 32. Candidate regret/value work ablation | `escher_regret_value_work_ablation` |
+| 33. Candidate regret action-head capacity ablation | `escher_regret_action_head_capacity_ablation` |
+| 34. Candidate regret-batch-size ablation | `escher_regret_batch_size_ablation` |
+| 35. Candidate regret-target specification ablation | `escher_regret_target_specification_ablation` |
+| 36. Corrected regret-target scale-only ablation | `escher_regret_target_scale_only_ablation` |
+| 37. Staged 2x2 regret-target correction factorial | `escher_regret_target_factorial_correction` |
+| 38. Regret replay composition ablation | `escher_regret_replay_composition_ablation` |
+| 39. Fixed sampling-policy coverage ablation | `escher_fixed_sampling_coverage_ablation` |
 
 Example:
 

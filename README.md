@@ -97,7 +97,12 @@ The repository is organised so that each experiment can be run independently whi
 │       ├── escher_replay_capacity_ablation/          # Experiment 31
 │       ├── escher_regret_value_work_ablation/        # Experiment 32
 │       ├── escher_regret_action_head_capacity_ablation/ # Experiment 33
-│       └── escher_regret_batch_size_ablation/        # Experiment 34
+│       ├── escher_regret_batch_size_ablation/        # Experiment 34
+│       ├── escher_regret_target_specification_ablation/ # Experiment 35
+│       ├── escher_regret_target_scale_only_ablation/ # Experiment 36
+│       ├── escher_regret_target_factorial_correction/ # Experiment 37
+│       ├── escher_regret_replay_composition_ablation/ # Experiment 38
+│       └── escher_fixed_sampling_coverage_ablation/ # Experiment 39
 ├── docs/
 │   └── OUTPUT_CONVENTIONS.md
 ├── notebooks/                                        # Original notebook archive
@@ -429,6 +434,72 @@ python -m experiments.leduc_poker.escher_regret_batch_size_ablation.run \
   --output-root outputs/smoke_tests
 ```
 
+### 35. ESCHER candidate regret-target specification ablation
+
+[`experiments/leduc_poker/escher_regret_target_specification_ablation/`](experiments/leduc_poker/escher_regret_target_specification_ablation/README.md)
+
+Compares the exact Experiment 28 author-code target
+`Q_hat(h,a) - V_hat(h)` against the policy-weighted child-Q target specified in
+Equation 7 / Algorithm 2 of the ESCHER paper. Both arms retain Experiment 28's
+architecture, seeds, budgets, replay settings, and standardized target
+processing. Bellman-consistency and raw-target centering diagnostics are
+exported alongside exploitability.
+
+**Question:** does enforcing a policy-consistent raw regret target remove part
+of the Experiment 28 exploitability plateau?
+
+### 36. ESCHER corrected regret-target scale-only ablation
+
+[`experiments/leduc_poker/escher_regret_target_scale_only_ablation/`](experiments/leduc_poker/escher_regret_target_scale_only_ablation/README.md)
+
+Uses the exact Experiment 28 configuration as the primary baseline and tests
+corrected policy-weighted regret targets under raw, fixed utility-range,
+minibatch-RMS, persistent-standard-deviation, and legacy batch-centred
+processing. It exports target sign-flip and positive-target diagnostics, plus
+paired comparisons against both Experiment 28 and the corrected batch-centred
+control.
+
+**Question:** can scale-only conditioning retain Experiment 28's optimization
+benefit without changing target signs and positive-regret geometry?
+
+### 37. ESCHER 2x2 regret-target correction factorial
+
+[`experiments/leduc_poker/escher_regret_target_factorial_correction/`](experiments/leduc_poker/escher_regret_target_factorial_correction/README.md)
+
+Runs the exact Experiment 28 baseline, policy-weighted-Q correction only,
+scale-only minibatch-RMS normalization only, and both corrections. All four
+arms are screened on three seeds. The two best treatments and the baseline are
+then confirmed on five separate seeds. The primary success criterion is
+exploitability below `0.3` at approximately one million nodes.
+
+**Question:** which correction drives improvement, and do the two corrections
+interact constructively?
+
+### 38. ESCHER regret replay composition ablation
+
+[`experiments/leduc_poker/escher_regret_replay_composition_ablation/`](experiments/leduc_poker/escher_regret_replay_composition_ablation/README.md)
+
+Compares Experiment 28's uniform regret reservoir with append-only all-sample
+replay, infoset-stratified replay, protected rare-infoset quotas, and
+counterfactual-reach-weighted priority replay. Regret optimizer work, value
+replay, and average-policy replay remain fixed, while replay saturation and
+infoset-balance diagnostics are exported by nodes touched.
+
+**Question:** does removing or restructuring finite regret replay move the
+Experiment 28 exploitability plateau?
+
+### 39. ESCHER fixed sampling-policy coverage ablation
+
+[`experiments/leduc_poker/escher_fixed_sampling_coverage_ablation/`](experiments/leduc_poker/escher_fixed_sampling_coverage_ablation/README.md)
+
+Compares Experiment 28's fixed uniform-action sampling with exact
+leaf-balanced sampling and a fixed 50/50 tempered mixture. All algorithmic
+settings and optimizer work remain fixed, while exact and empirical history
+coverage diagnostics are exported by nodes touched.
+
+**Question:** does improving the minimum fixed-policy reach of Leduc histories
+materially lower the Experiment 28 exploitability plateau?
+
 ## Setup
 
 Create and activate a Python 3.9 virtual environment. The repository contains
@@ -550,6 +621,21 @@ python -m experiments.leduc_poker.escher_regret_action_head_capacity_ablation.ru
 
 # Experiment 34 — regret-batch-size ablation on the candidate architecture
 python -m experiments.leduc_poker.escher_regret_batch_size_ablation.run
+
+# Experiment 35 — regret-target specification ablation on the candidate architecture
+python -m experiments.leduc_poker.escher_regret_target_specification_ablation.run
+
+# Experiment 36 — corrected regret-target scale-only ablation
+python -m experiments.leduc_poker.escher_regret_target_scale_only_ablation.run
+
+# Experiment 37 — staged 2x2 regret-target correction factorial
+python -m experiments.leduc_poker.escher_regret_target_factorial_correction.run
+
+# Experiment 38 — regret replay composition ablation
+python -m experiments.leduc_poker.escher_regret_replay_composition_ablation.run
+
+# Experiment 39 — fixed sampling-policy coverage ablation
+python -m experiments.leduc_poker.escher_fixed_sampling_coverage_ablation.run
 ```
 
 For quick GCP smoke tests, first make sure the environment variables required
@@ -965,6 +1051,107 @@ root. Each command submits a separate Google Batch job.
     --value-network-train-steps 1 \
     --evaluation-interval 1 \
     --output-root outputs/cloud/escher-smoke-exp34" \
+  "n2-standard-4" "3600" "4000" "16000" "100"
+
+# Experiment 35 smoke test
+./gcp/submit_batch_experiment.sh \
+  "escher-smoke-exp35-$(date +%Y%m%d-%H%M%S)" \
+  "/usr/bin/time -v python -m experiments.leduc_poker.escher_regret_target_specification_ablation.run \
+    --seeds 1234 \
+    --variant-ids author_state_value_baseline,paper_policy_weighted_q \
+    --iterations 2 \
+    --traversals 2 \
+    --value-traversals 2 \
+    --policy-network-train-steps 1 \
+    --regret-network-train-steps 1 \
+    --value-network-train-steps 1 \
+    --evaluation-interval 1 \
+    --batch-size-regret 2 \
+    --batch-size-value 2 \
+    --batch-size-average-policy 2 \
+    --memory-capacity 128 \
+    --output-root outputs/cloud/escher-smoke-exp35" \
+  "n2-standard-4" "3600" "4000" "16000" "100"
+
+# Experiment 36 smoke test
+./gcp/submit_batch_experiment.sh \
+  "escher-smoke-exp36-$(date +%Y%m%d-%H%M%S)" \
+  "/usr/bin/time -v python -m experiments.leduc_poker.escher_regret_target_scale_only_ablation.run \
+    --seeds 1234 \
+    --variant-ids experiment_28_batch_centered_baseline,corrected_batch_centered_control,corrected_raw,corrected_fixed_utility_scale,corrected_batch_rms,corrected_persistent_std \
+    --iterations 2 \
+    --traversals 2 \
+    --value-traversals 2 \
+    --policy-network-train-steps 1 \
+    --regret-network-train-steps 1 \
+    --value-network-train-steps 1 \
+    --evaluation-interval 1 \
+    --batch-size-regret 2 \
+    --batch-size-value 2 \
+    --batch-size-average-policy 2 \
+    --memory-capacity 128 \
+    --output-root outputs/cloud/escher-smoke-exp36" \
+  "n2-standard-4" "3600" "4000" "16000" "100"
+
+# Experiment 37 smoke test
+./gcp/submit_batch_experiment.sh \
+  "escher-smoke-exp37-$(date +%Y%m%d-%H%M%S)" \
+  "/usr/bin/time -v python -m experiments.leduc_poker.escher_regret_target_factorial_correction.run \
+    --screening-seeds 1234 \
+    --confirmation-seeds 2025 \
+    --confirmation-top-k 1 \
+    --iterations 2 \
+    --traversals 2 \
+    --value-traversals 2 \
+    --policy-network-train-steps 1 \
+    --regret-network-train-steps 1 \
+    --value-network-train-steps 1 \
+    --evaluation-interval 1 \
+    --batch-size-regret 2 \
+    --batch-size-value 2 \
+    --batch-size-average-policy 2 \
+    --memory-capacity 128 \
+    --output-root outputs/cloud/escher-smoke-exp37" \
+  "n2-standard-4" "3600" "4000" "16000" "100"
+
+# Experiment 38 smoke test
+./gcp/submit_batch_experiment.sh \
+  "escher-smoke-exp38-$(date +%Y%m%d-%H%M%S)" \
+  "/usr/bin/time -v python -m experiments.leduc_poker.escher_regret_replay_composition_ablation.run \
+    --seeds 1234 \
+    --variant-ids experiment_28_reservoir_replay,all_regret_samples,infoset_stratified_replay,rare_history_quota_replay,counterfactual_reach_weighted_replay \
+    --iterations 2 \
+    --traversals 2 \
+    --value-traversals 2 \
+    --policy-network-train-steps 1 \
+    --regret-network-train-steps 1 \
+    --value-network-train-steps 1 \
+    --evaluation-interval 1 \
+    --batch-size-regret 2 \
+    --batch-size-value 2 \
+    --batch-size-average-policy 2 \
+    --memory-capacity 128 \
+    --output-root outputs/cloud/escher-smoke-exp38" \
+  "n2-standard-4" "3600" "4000" "16000" "100"
+
+# Experiment 39 smoke test
+./gcp/submit_batch_experiment.sh \
+  "escher-smoke-exp39-$(date +%Y%m%d-%H%M%S)" \
+  "/usr/bin/time -v python -m experiments.leduc_poker.escher_fixed_sampling_coverage_ablation.run \
+    --seeds 1234 \
+    --variant-ids experiment_28_uniform_fixed_sampling,exact_balanced_fixed_sampling,tempered_balanced_fixed_sampling \
+    --iterations 2 \
+    --traversals 2 \
+    --value-traversals 2 \
+    --policy-network-train-steps 1 \
+    --regret-network-train-steps 1 \
+    --value-network-train-steps 1 \
+    --evaluation-interval 1 \
+    --batch-size-regret 2 \
+    --batch-size-value 2 \
+    --batch-size-average-policy 2 \
+    --memory-capacity 128 \
+    --output-root outputs/cloud/escher-smoke-exp39" \
   "n2-standard-4" "3600" "4000" "16000" "100"
 ```
 

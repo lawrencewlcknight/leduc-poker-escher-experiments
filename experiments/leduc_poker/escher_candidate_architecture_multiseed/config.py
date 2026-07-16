@@ -48,10 +48,16 @@ BASE_CONFIG.update({
     "regret_network_head_depth": 1,
     "regret_network_head_units": 64,
     "regret_network_output_mode": "direct",
+    "regret_target_baseline": "author_state_value",
     "regret_target_processing": "standardize",
     "regret_target_clip_value": 1.0,
     "regret_target_standardize_epsilon": 1e-6,
+    "regret_replay_mode": "reservoir",
+    "regret_replay_rare_history_quota": 64,
+    "regret_replay_weight_floor": 1e-6,
+    "use_balanced_probs": False,
+    "balanced_sampling_mix": 0.0,
+    "track_sampling_coverage": False,
 })
 
 DEFAULT_CONFIG = make_variant_config(BASE_CONFIG, CANDIDATE_VARIANT)
-
