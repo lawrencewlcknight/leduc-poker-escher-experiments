@@ -29,10 +29,10 @@ def make_escher_solver(
     config: Dict[str, Any],
     *,
     num_iterations: Optional[int] = None,
+    run_seed: Optional[int] = None,
 ) -> ESCHERSolver:
-    """Construct an ``ESCHERSolver`` from a plain experiment config dict."""
-    return ESCHERSolver(
-        game,
+    """Construct a sequential or Ray-parallel solver from an experiment config."""
+    solver_kwargs = dict(
         policy_network_layers=tuple(config["policy_network_layers"]),
         regret_network_layers=tuple(config["regret_network_layers"]),
         value_network_layers=tuple(config["value_network_layers"]),
@@ -153,6 +153,31 @@ def make_escher_solver(
         regret_target_ema_decay=float(
             config.get("regret_target_ema_decay", 0.99)
         ),
+    )
+    execution_backend = str(config.get("execution_backend", "sequential"))
+    if execution_backend == "sequential":
+        return ESCHERSolver(game, **solver_kwargs)
+    if execution_backend == "ray_parallel":
+        from .parallel_solver import ParallelESCHERSolver
+
+        return ParallelESCHERSolver(
+            game,
+            game_name=str(config["game_name"]),
+            parallel_num_workers=int(config.get("parallel_num_workers", 3)),
+            parallel_run_seed=int(
+                config.get("parallel_run_seed", 0)
+                if run_seed is None
+                else run_seed
+            ),
+            parallel_ray_address=config.get("parallel_ray_address"),
+            parallel_log_to_driver=bool(
+                config.get("parallel_log_to_driver", False)
+            ),
+            **solver_kwargs,
+        )
+    raise ValueError(
+        "execution_backend must be 'sequential' or 'ray_parallel', got "
+        f"{execution_backend!r}."
     )
 
 
@@ -384,7 +409,9 @@ def run_single_seed_variant(
     try:
         set_seed_tf(seed)
         game = pyspiel.load_game(config["game_name"])
-        solver = make_escher_solver(game, config)
+        solver_initialization_start = time.time()
+        solver = make_escher_solver(game, config, run_seed=seed)
+        solver_initialization_seconds = time.time() - solver_initialization_start
 
         start = time.time()
         (
@@ -440,6 +467,10 @@ def run_single_seed_variant(
             ),
             "policy_gradient_steps_expected": int(config["policy_gradient_steps_expected"]),
             "elapsed_seconds": float(elapsed),
+            "solver_initialization_seconds": float(solver_initialization_seconds),
+            "end_to_end_seconds": float(
+                solver_initialization_seconds + elapsed
+            ),
             "num_intermediate_points": int(intermediate_exploitability.size),
             "intermediate_final_exploitability": (
                 float(intermediate_exploitability[-1])
@@ -475,6 +506,20 @@ def run_single_seed_variant(
             "final_policy_loss": to_float(policy_loss),
             **final_eval,
         }
+
+        regret_collection_seconds = float(
+            getattr(solver, "_cumulative_regret_traversal_seconds", np.nan)
+        )
+        value_collection_seconds = float(
+            getattr(solver, "_cumulative_value_traversal_seconds", np.nan)
+        )
+        summary.update({
+            "regret_experience_collection_seconds": regret_collection_seconds,
+            "value_experience_collection_seconds": value_collection_seconds,
+            "experience_collection_seconds": (
+                regret_collection_seconds + value_collection_seconds
+            ),
+        })
 
         for key in [
             "policy_loss",
@@ -633,6 +678,8 @@ def run_single_seed_variant(
 
         return result
     finally:
+        if solver is not None and hasattr(solver, "close"):
+            solver.close()
         del solver
         del game
         cleanup_tensorflow_memory()

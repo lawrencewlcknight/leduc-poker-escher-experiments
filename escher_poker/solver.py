@@ -387,6 +387,8 @@ class ESCHERSolver(policy.Policy):
         self._importance_sampling_threshold = importance_sampling_threshold
         self._clear_value_buffer = clear_value_buffer
         self._nodes_visited = 0
+        self._cumulative_regret_traversal_seconds = 0.0
+        self._cumulative_value_traversal_seconds = 0.0
         self._example_info_state = [None, None]
         self._example_hist_state = None
         self._example_legal_actions_mask = [None, None]
@@ -770,6 +772,15 @@ class ESCHERSolver(policy.Policy):
         regret_weights = [self._regret_networks[player].get_weights() for player in range(self._num_players)]
         return regret_weights
 
+    def set_weights(self, weights):
+        """Set inference regret-network weights for experience workers."""
+        if len(weights) != self._num_players:
+            raise ValueError(
+                f"Expected weights for {self._num_players} players, got {len(weights)}."
+            )
+        for player, player_weights in enumerate(weights):
+            self._regret_networks[player].set_weights(player_weights)
+
     def get_policy_weights(self):
         policy_weights = self._policy_network.get_weights()
         return policy_weights
@@ -991,15 +1002,23 @@ class ESCHERSolver(policy.Policy):
     def traverse_game_tree_n_times(self, n, p, train_regret=False, train_value=False,
                                    record_value=False,
                                    track_mean_squares=True, on_policy_prob=0., expl=0.6, val_test=False):
-        for i in range(n):
-            if i > 0:
-                track_mean_squares = False
-            self._traverse_game_tree(self._root_node, p, my_reach=1.0, opp_reach=1.0, sample_reach=1.0,
-                                     my_sample_reach=1.0, chance_reach=1.0,
-                                     train_regret=train_regret, train_value=train_value,
-                                     record_value=record_value,
-                                     track_mean_squares=track_mean_squares, on_policy_prob=on_policy_prob,
-                                     expl=expl, val_test=val_test)
+        traversal_start = time.perf_counter()
+        try:
+            for i in range(n):
+                if i > 0:
+                    track_mean_squares = False
+                self._traverse_game_tree(self._root_node, p, my_reach=1.0, opp_reach=1.0, sample_reach=1.0,
+                                         my_sample_reach=1.0, chance_reach=1.0,
+                                         train_regret=train_regret, train_value=train_value,
+                                         record_value=record_value,
+                                         track_mean_squares=track_mean_squares, on_policy_prob=on_policy_prob,
+                                         expl=expl, val_test=val_test)
+        finally:
+            elapsed = time.perf_counter() - traversal_start
+            if train_regret:
+                self._cumulative_regret_traversal_seconds += elapsed
+            if train_value:
+                self._cumulative_value_traversal_seconds += elapsed
 
     def traverse_game_tree_joint_on_policy_n_times(self, n, track_mean_squares=False):
         """Collect regret samples from trajectories under the current joint policy."""
@@ -1276,6 +1295,18 @@ class ESCHERSolver(policy.Policy):
                         diagnostics["iteration"].append(int(i + 1))
                         diagnostics["solver_iteration"].append(int(self._iteration))
                         diagnostics["wall_clock_seconds"].append(float(time.time() - solve_start_time))
+                        diagnostics["cumulative_regret_traversal_seconds"].append(
+                            float(self._cumulative_regret_traversal_seconds)
+                        )
+                        diagnostics["cumulative_value_traversal_seconds"].append(
+                            float(self._cumulative_value_traversal_seconds)
+                        )
+                        diagnostics["cumulative_experience_collection_seconds"].append(
+                            float(
+                                self._cumulative_regret_traversal_seconds
+                                + self._cumulative_value_traversal_seconds
+                            )
+                        )
                         diagnostics["learning_rate"].append(float(current_lr))
                         diagnostics["policy_loss"].append(policy_loss_float)
                         diagnostics["value_loss"].append(float(last_value_loss))

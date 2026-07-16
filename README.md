@@ -102,7 +102,8 @@ The repository is organised so that each experiment can be run independently whi
 │       ├── escher_regret_target_scale_only_ablation/ # Experiment 36
 │       ├── escher_regret_target_factorial_correction/ # Experiment 37
 │       ├── escher_regret_replay_composition_ablation/ # Experiment 38
-│       └── escher_fixed_sampling_coverage_ablation/ # Experiment 39
+│       ├── escher_fixed_sampling_coverage_ablation/ # Experiment 39
+│       └── escher_parallel_equivalence_ablation/    # Experiment 40
 ├── docs/
 │   └── OUTPUT_CONVENTIONS.md
 ├── notebooks/                                        # Original notebook archive
@@ -113,6 +114,7 @@ The repository is organised so that each experiment can be run independently whi
 ├── requirements.txt
 ├── requirements-dev.txt
 ├── README.md
+├── THIRD_PARTY_NOTICES.md
 └── TESTING.md
 ```
 
@@ -500,6 +502,19 @@ coverage diagnostics are exported by nodes touched.
 **Question:** does improving the minimum fixed-policy reach of Leduc histories
 materially lower the Experiment 28 exploitability plateau?
 
+### 40. ESCHER sequential/parallel equivalence ablation
+
+[`experiments/leduc_poker/escher_parallel_equivalence_ablation/`](experiments/leduc_poker/escher_parallel_equivalence_ablation/README.md)
+
+Compares the exact Experiment 28 sequential solver with a three-worker
+Ray-parallel experience-collection backend adapted from Sandholm-Lab's public
+implementation. Total traversals, replay capacity, learner updates, and three
+paired seeds are held fixed. It reports pre-declared final-policy equivalence
+tests plus experience-collection-phase and end-to-end speedups.
+
+**Question:** does parallel collection preserve solution quality while reducing
+runtime, without giving the parallel arm a larger data or replay budget?
+
 ## Setup
 
 Create and activate a Python 3.9 virtual environment. The repository contains
@@ -636,6 +651,9 @@ python -m experiments.leduc_poker.escher_regret_replay_composition_ablation.run
 
 # Experiment 39 — fixed sampling-policy coverage ablation
 python -m experiments.leduc_poker.escher_fixed_sampling_coverage_ablation.run
+
+# Experiment 40 — sequential versus Ray-parallel equivalence ablation
+python -m experiments.leduc_poker.escher_parallel_equivalence_ablation.run
 ```
 
 For quick GCP smoke tests, first make sure the environment variables required
@@ -1152,6 +1170,26 @@ root. Each command submits a separate Google Batch job.
     --batch-size-average-policy 2 \
     --memory-capacity 128 \
     --output-root outputs/cloud/escher-smoke-exp39" \
+  "n2-standard-4" "3600" "4000" "16000" "100"
+
+# Experiment 40 smoke test
+./gcp/submit_batch_experiment.sh \
+  "escher-smoke-exp40-$(date +%Y%m%d-%H%M%S)" \
+  "/usr/bin/time -v python -m experiments.leduc_poker.escher_parallel_equivalence_ablation.run \
+    --seeds 1234 \
+    --variant-ids experiment_28_sequential,experiment_28_ray_parallel \
+    --iterations 2 \
+    --traversals 6 \
+    --value-traversals 6 \
+    --policy-network-train-steps 1 \
+    --regret-network-train-steps 1 \
+    --value-network-train-steps 1 \
+    --evaluation-interval 1 \
+    --batch-size-regret 2 \
+    --batch-size-value 2 \
+    --batch-size-average-policy 2 \
+    --memory-capacity 129 \
+    --output-root outputs/cloud/escher-smoke-exp40" \
   "n2-standard-4" "3600" "4000" "16000" "100"
 ```
 

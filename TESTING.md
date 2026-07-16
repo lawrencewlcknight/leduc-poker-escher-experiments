@@ -379,6 +379,30 @@ python -m experiments.leduc_poker.escher_fixed_sampling_coverage_ablation.run \
 This should produce paired exploitability outputs plus exact minimum-history
 reach, observed infoset coverage, and visit-imbalance curves.
 
+Run a tiny sequential/parallel equivalence comparison:
+
+```bash
+python -m experiments.leduc_poker.escher_parallel_equivalence_ablation.run \
+  --seeds 1234 \
+  --variant-ids experiment_28_sequential,experiment_28_ray_parallel \
+  --iterations 2 \
+  --traversals 6 \
+  --value-traversals 6 \
+  --policy-network-train-steps 1 \
+  --regret-network-train-steps 1 \
+  --value-network-train-steps 1 \
+  --evaluation-interval 1 \
+  --batch-size-regret 2 \
+  --batch-size-value 2 \
+  --batch-size-average-policy 2 \
+  --memory-capacity 129 \
+  --output-root outputs/smoke_tests
+```
+
+This should complete the sequential arm and the three-worker Ray arm, then
+write paired policy-equivalence checks and initialization, training-loop,
+end-to-end, and experience-collection speedups.
+
 ## 5. Full experiment run
 
 ```bash
@@ -411,6 +435,7 @@ python -m experiments.leduc_poker.escher_regret_target_scale_only_ablation.run
 python -m experiments.leduc_poker.escher_regret_target_factorial_correction.run
 python -m experiments.leduc_poker.escher_regret_replay_composition_ablation.run
 python -m experiments.leduc_poker.escher_fixed_sampling_coverage_ablation.run
+python -m experiments.leduc_poker.escher_parallel_equivalence_ablation.run
 ```
 
 The full runs use the aligned ESCHER baseline configuration. Most experiments default to the 10 thesis seeds; some targeted ablations use the smaller notebook seed set unless `--seeds` is supplied. These may take a long time.

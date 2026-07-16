@@ -43,6 +43,7 @@ from escher_poker.experiment_utils import (  # noqa: E402
     run_single_seed_variant,
     safe_stats,
 )
+from escher_poker.parallel_utils import equivalence_summary  # noqa: E402
 from experiments.leduc_poker.escher_variant_config_utils import (  # noqa: E402
     make_variant_config,
     parse_variant_ids,
@@ -102,6 +103,8 @@ DEFAULT_SUMMARY_HP_FIELDS = [
     "regret_target_ema_decay",
     "reinitialize_regret_networks",
     "reinitialize_value_network",
+    "execution_backend",
+    "parallel_num_workers",
 ]
 
 DEFAULT_PAIRED_DELTA_FIELDS = [
@@ -278,7 +281,11 @@ def _paired_rows(
     rows: Sequence[Mapping],
     baseline_variant_id: str,
     paired_delta_fields: Sequence[str],
+    paired_ratio_fields: Mapping[str, str] = (),
+    paired_equivalence_tolerances: Mapping[str, float] = (),
 ) -> List[Dict]:
+    paired_ratio_fields = dict(paired_ratio_fields)
+    paired_equivalence_tolerances = dict(paired_equivalence_tolerances)
     by_variant_seed = {
         (str(row["variant_id"]), int(row["seed"])): row
         for row in rows
@@ -302,6 +309,23 @@ def _paired_rows(
                     float(treatment.get(field, np.nan))
                     - float(baseline.get(field, np.nan))
                 )
+            for ratio_name, field in paired_ratio_fields.items():
+                baseline_value = float(baseline.get(field, np.nan))
+                treatment_value = float(treatment.get(field, np.nan))
+                row[ratio_name] = (
+                    baseline_value / treatment_value
+                    if np.isfinite(baseline_value)
+                    and np.isfinite(treatment_value)
+                    and treatment_value > 0.0
+                    else np.nan
+                )
+            for field, margin in paired_equivalence_tolerances.items():
+                delta = float(
+                    row.get(f"delta_{field}_vs_baseline", np.nan)
+                )
+                row[f"within_equivalence_margin_{field}"] = bool(
+                    np.isfinite(delta) and abs(delta) <= float(margin)
+                )
             paired.append(row)
     return paired
 
@@ -309,7 +333,9 @@ def _paired_rows(
 def _paired_summary(
     rows: Sequence[Mapping],
     paired_delta_fields: Sequence[str],
+    paired_equivalence_tolerances: Mapping[str, float] = (),
 ) -> Dict:
+    paired_equivalence_tolerances = dict(paired_equivalence_tolerances)
     variants = sorted({str(row["variant_id"]) for row in rows})
     summary = {}
     for variant_id in variants:
@@ -324,6 +350,13 @@ def _paired_summary(
             finite = values[np.isfinite(values)]
             summary[variant_id][f"fraction_improved_{field}"] = (
                 float(np.mean(finite < 0.0)) if finite.size else np.nan
+            )
+        summary[variant_id]["equivalence"] = {}
+        for field, margin in paired_equivalence_tolerances.items():
+            delta_key = f"delta_{field}_vs_baseline"
+            summary[variant_id]["equivalence"][field] = equivalence_summary(
+                [row.get(delta_key, np.nan) for row in variant_rows],
+                float(margin),
             )
     return summary
 
@@ -636,10 +669,14 @@ def run_variant_ablation(
     worker_module: str,
     summary_hp_fields: Sequence[str] = DEFAULT_SUMMARY_HP_FIELDS,
     paired_delta_fields: Sequence[str] = DEFAULT_PAIRED_DELTA_FIELDS,
+    paired_ratio_fields: Mapping[str, str] = (),
+    paired_equivalence_tolerances: Mapping[str, float] = (),
     extra_summary_fields: Mapping[str, str] = (),
     additional_paired_baseline_ids: Sequence[str] = (),
     extra_curve_plot_specs: Sequence = (),
 ) -> int:
+    paired_ratio_fields = dict(paired_ratio_fields)
+    paired_equivalence_tolerances = dict(paired_equivalence_tolerances)
     parser = _build_arg_parser(
         description=description,
         output_root=output_root,
@@ -670,6 +707,8 @@ def run_variant_ablation(
         "selected_variant_ids": selected_ids,
         "baseline_variant_id": active_baseline_id,
         "additional_paired_baseline_ids": list(additional_paired_baseline_ids),
+        "paired_ratio_fields": paired_ratio_fields,
+        "paired_equivalence_tolerances": paired_equivalence_tolerances,
         "available_variants": list(variants),
         "subprocess_isolation_enabled": bool(subprocess_isolation_enabled),
         "incremental_outputs": {
@@ -749,9 +788,19 @@ def run_variant_ablation(
 
     summary_rows = [result["summary"] for result in results]
     curve_rows = [row for result in results for row in result["curves"]]
-    paired_rows = _paired_rows(summary_rows, active_baseline_id, paired_delta_fields)
+    paired_rows = _paired_rows(
+        summary_rows,
+        active_baseline_id,
+        paired_delta_fields,
+        paired_ratio_fields,
+        paired_equivalence_tolerances,
+    )
     aggregate = _aggregate_by_variant(summary_rows, selected_variants)
-    paired_summary = _paired_summary(paired_rows, paired_delta_fields)
+    paired_summary = _paired_summary(
+        paired_rows,
+        paired_delta_fields,
+        paired_equivalence_tolerances,
+    )
     additional_paired_summaries = {}
     for contrast_baseline_id in additional_paired_baseline_ids:
         contrast_baseline_id = str(contrast_baseline_id)
@@ -761,8 +810,14 @@ def run_variant_ablation(
             summary_rows,
             contrast_baseline_id,
             paired_delta_fields,
+            paired_ratio_fields,
+            paired_equivalence_tolerances,
         )
-        contrast_summary = _paired_summary(contrast_rows, paired_delta_fields)
+        contrast_summary = _paired_summary(
+            contrast_rows,
+            paired_delta_fields,
+            paired_equivalence_tolerances,
+        )
         safe_baseline_id = _safe_stem(contrast_baseline_id)
         _write_csv(
             run_dir / f"paired_differences_vs_{safe_baseline_id}.csv",
