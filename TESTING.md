@@ -403,6 +403,54 @@ This should complete the sequential arm and the three-worker Ray arm, then
 write paired policy-equivalence checks and initialization, training-loop,
 end-to-end, and experience-collection speedups.
 
+Run a tiny combined candidate ablation:
+
+```bash
+python -m experiments.leduc_poker.escher_combined_candidate_ablation.run \
+  --seeds 1234 \
+  --variant-ids experiment_28_baseline,policy_q_stratified_uniform,policy_q_stratified_exact_balanced \
+  --iterations 2 \
+  --traversals 2 \
+  --value-traversals 2 \
+  --policy-network-train-steps 1 \
+  --regret-network-train-steps 1 \
+  --value-network-train-steps 1 \
+  --evaluation-interval 1 \
+  --batch-size-regret 2 \
+  --batch-size-value 2 \
+  --batch-size-average-policy 2 \
+  --memory-capacity 128 \
+  --output-root outputs/smoke_tests
+```
+
+This should complete the exact Experiment 28 baseline, the uniform-sampling
+combined candidate, and the exact-balanced maximum stack. It also writes the
+direct paired maximum-stack comparison against the uniform candidate.
+
+Run a tiny smoke test of the 20x-node experiment's two algorithm paths. The
+CLI override intentionally reduces the horizon for this smoke test only:
+
+```bash
+python -m experiments.leduc_poker.escher_long_horizon_candidate_ablation.run \
+  --seeds 1234 \
+  --variant-ids experiment_28_20x_nodes,policy_q_stratified_uniform_20x_nodes \
+  --iterations 2 \
+  --traversals 2 \
+  --value-traversals 2 \
+  --policy-network-train-steps 1 \
+  --regret-network-train-steps 1 \
+  --value-network-train-steps 1 \
+  --evaluation-interval 1 \
+  --batch-size-regret 2 \
+  --batch-size-value 2 \
+  --batch-size-average-policy 2 \
+  --memory-capacity 128 \
+  --output-root outputs/smoke_tests
+```
+
+This should complete the long-horizon Experiment 28 and candidate code paths
+and write paired quality, runtime, replay-composition, and checkpoint outputs.
+
 ## 5. Full experiment run
 
 ```bash
@@ -436,6 +484,8 @@ python -m experiments.leduc_poker.escher_regret_target_factorial_correction.run
 python -m experiments.leduc_poker.escher_regret_replay_composition_ablation.run
 python -m experiments.leduc_poker.escher_fixed_sampling_coverage_ablation.run
 python -m experiments.leduc_poker.escher_parallel_equivalence_ablation.run
+python -m experiments.leduc_poker.escher_combined_candidate_ablation.run
+python -m experiments.leduc_poker.escher_long_horizon_candidate_ablation.run
 ```
 
 The full runs use the aligned ESCHER baseline configuration. Most experiments default to the 10 thesis seeds; some targeted ablations use the smaller notebook seed set unless `--seeds` is supplied. These may take a long time.

@@ -103,7 +103,9 @@ The repository is organised so that each experiment can be run independently whi
 │       ├── escher_regret_target_factorial_correction/ # Experiment 37
 │       ├── escher_regret_replay_composition_ablation/ # Experiment 38
 │       ├── escher_fixed_sampling_coverage_ablation/ # Experiment 39
-│       └── escher_parallel_equivalence_ablation/    # Experiment 40
+│       ├── escher_parallel_equivalence_ablation/    # Experiment 40
+│       ├── escher_combined_candidate_ablation/      # Experiment 41
+│       └── escher_long_horizon_candidate_ablation/  # Experiment 42
 ├── docs/
 │   └── OUTPUT_CONVENTIONS.md
 ├── notebooks/                                        # Original notebook archive
@@ -515,6 +517,30 @@ tests plus experience-collection-phase and end-to-end speedups.
 **Question:** does parallel collection preserve solution quality while reducing
 runtime, without giving the parallel arm a larger data or replay budget?
 
+### 41. ESCHER combined candidate ablation
+
+[`experiments/leduc_poker/escher_combined_candidate_ablation/`](experiments/leduc_poker/escher_combined_candidate_ablation/README.md)
+
+Compares the exact Experiment 28 baseline with policy-weighted-Q targets plus
+infoset-stratified replay, first under uniform fixed sampling and then with
+exact balanced fixed sampling. All other Experiment 28 settings remain fixed,
+and the three arms use three matched seeds.
+
+**Question:** do the strongest target and replay treatments combine, and does
+exact balanced sampling add value once both are enabled?
+
+### 42. ESCHER 20x-node long-horizon candidate ablation
+
+[`experiments/leduc_poker/escher_long_horizon_candidate_ablation/`](experiments/leduc_poker/escher_long_horizon_candidate_ablation/README.md)
+
+Compares the exact Experiment 28 algorithm with the policy-weighted-Q,
+infoset-stratified, uniform-sampling candidate over three matched seeds. Both
+arms execute exactly 20 times Experiment 28's solve-pass, traversal, and
+per-pass optimizer-event budget; the maximum stack is excluded.
+
+**Question:** does substantially longer training lower either plateau, and does
+the combined candidate develop a durable advantage near 19 million nodes?
+
 ## Setup
 
 Create and activate a Python 3.9 virtual environment. The repository contains
@@ -654,6 +680,12 @@ python -m experiments.leduc_poker.escher_fixed_sampling_coverage_ablation.run
 
 # Experiment 40 — sequential versus Ray-parallel equivalence ablation
 python -m experiments.leduc_poker.escher_parallel_equivalence_ablation.run
+
+# Experiment 41 — combined candidate versus Experiment 28
+python -m experiments.leduc_poker.escher_combined_candidate_ablation.run
+
+# Experiment 42 — 20x-node long-horizon candidate comparison
+python -m experiments.leduc_poker.escher_long_horizon_candidate_ablation.run
 ```
 
 For quick GCP smoke tests, first make sure the environment variables required
@@ -1190,6 +1222,46 @@ root. Each command submits a separate Google Batch job.
     --batch-size-average-policy 2 \
     --memory-capacity 129 \
     --output-root outputs/cloud/escher-smoke-exp40" \
+  "n2-standard-4" "3600" "4000" "16000" "100"
+
+# Experiment 41 smoke test
+./gcp/submit_batch_experiment.sh \
+  "escher-smoke-exp41-$(date +%Y%m%d-%H%M%S)" \
+  "/usr/bin/time -v python -m experiments.leduc_poker.escher_combined_candidate_ablation.run \
+    --seeds 1234 \
+    --variant-ids experiment_28_baseline,policy_q_stratified_uniform,policy_q_stratified_exact_balanced \
+    --iterations 2 \
+    --traversals 2 \
+    --value-traversals 2 \
+    --policy-network-train-steps 1 \
+    --regret-network-train-steps 1 \
+    --value-network-train-steps 1 \
+    --evaluation-interval 1 \
+    --batch-size-regret 2 \
+    --batch-size-value 2 \
+    --batch-size-average-policy 2 \
+    --memory-capacity 128 \
+    --output-root outputs/cloud/escher-smoke-exp41" \
+  "n2-standard-4" "3600" "4000" "16000" "100"
+
+# Experiment 42 smoke test
+./gcp/submit_batch_experiment.sh \
+  "escher-smoke-exp42-$(date +%Y%m%d-%H%M%S)" \
+  "/usr/bin/time -v python -m experiments.leduc_poker.escher_long_horizon_candidate_ablation.run \
+    --seeds 1234 \
+    --variant-ids experiment_28_20x_nodes,policy_q_stratified_uniform_20x_nodes \
+    --iterations 2 \
+    --traversals 2 \
+    --value-traversals 2 \
+    --policy-network-train-steps 1 \
+    --regret-network-train-steps 1 \
+    --value-network-train-steps 1 \
+    --evaluation-interval 1 \
+    --batch-size-regret 2 \
+    --batch-size-value 2 \
+    --batch-size-average-policy 2 \
+    --memory-capacity 128 \
+    --output-root outputs/cloud/escher-smoke-exp42" \
   "n2-standard-4" "3600" "4000" "16000" "100"
 ```
 
