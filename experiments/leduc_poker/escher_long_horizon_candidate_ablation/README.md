@@ -1,4 +1,4 @@
-# Experiment 42: 20x-node long-horizon candidate ablation
+# Experiment 42: 10x-node long-horizon candidate ablation
 
 This experiment tests whether substantially longer training changes the
 relative performance of Experiment 28 and the evidence-weighted candidate.
@@ -15,18 +15,18 @@ traversals per pass, optimizer work per pass, architecture, replay capacity,
 learning rate, evaluation interval, network reinitialization, and uniform fixed
 sampling remain unchanged. Exact balanced sampling is deliberately excluded.
 
-## Exact 20x budget
+## Approximately 10x budget
 
 The solver executes `range(num_iterations + 1)`. Experiment 28 therefore runs
 81 solve passes from `num_iterations=80`, rather than 80 passes. Experiment 42
-sets `num_iterations=1619`, producing exactly `1620 = 20 * 81` solve passes and
-exactly 20 times the configured traversal and per-pass regret/value optimizer
-budget. The unchanged evaluation cadence also increases average-policy
-training checkpoints over the longer horizon. Actual nodes touched remain the
-authoritative measure because sampled trajectories can contain different
-numbers of nodes; both arms export that count at every checkpoint. Based on
-Experiment 28's approximately 0.94 million nodes, the expected endpoint is
-roughly 19 million nodes per run.
+now sets the round value `num_iterations=800`, producing 801 solve passes. This
+is `801 / 81 = 9.89` times Experiment 28's solve-pass, traversal, and per-pass
+regret/value optimizer budget. The unchanged evaluation cadence also increases
+average-policy training checkpoints over the longer horizon. Actual nodes
+touched remain the authoritative measure because sampled trajectories can
+contain different numbers of nodes; both arms export that count at every
+checkpoint. Based on Experiment 28's approximately 0.94 million nodes, the
+expected endpoint is roughly 9.3 million nodes per run.
 
 The experiment uses the sequential backend because the current Ray backend
 does not yet implement globally infoset-stratified replay.
@@ -39,10 +39,10 @@ Full two-arm, three-seed experiment:
 python -m experiments.leduc_poker.escher_long_horizon_candidate_ablation.run
 ```
 
-This is approximately six 20x runs executed sequentially and can take several
-days on the Experiment 28 machine type. The runner writes each completed
-seed/variant result incrementally, so completed work remains available if a
-later run fails.
+This is approximately six 10x runs executed sequentially and is expected to
+take about two days on the Experiment 28 machine type. The runner writes each
+completed seed/variant result incrementally, so completed work remains
+available if a later run fails.
 
 The solver resets reinitialized network parameters and Adam state in place.
 This is numerically equivalent to constructing fresh networks under the same
@@ -57,7 +57,7 @@ paths and output generation:
 ```bash
 python -m experiments.leduc_poker.escher_long_horizon_candidate_ablation.run \
   --seeds 1234 \
-  --variant-ids experiment_28_20x_nodes,policy_q_stratified_uniform_20x_nodes \
+  --variant-ids experiment_28_10x_nodes,policy_q_stratified_uniform_10x_nodes \
   --iterations 2 \
   --traversals 2 \
   --value-traversals 2 \
@@ -82,11 +82,11 @@ AUC, runtime, replay-composition, and checkpoint outputs for both arms.
   "escher-exp42-$(date +%Y%m%d-%H%M%S)" \
   "/usr/bin/time -v python -m experiments.leduc_poker.escher_long_horizon_candidate_ablation.run \
     --output-root outputs/cloud/escher-exp42" \
-  "n2-standard-8" "604800" "8000" "32000" "100"
+  "n2-standard-8" "259200" "8000" "32000" "100"
 ```
 
-The seven-day task limit leaves headroom over the approximately four-day
-projection obtained by multiplying Experiment 28's measured per-seed runtime.
+The three-day task limit leaves headroom over the approximately two-day
+projection obtained by scaling Experiment 28's measured per-seed runtime.
 The Batch submitter retries transient VM failures (`50001`-`50004`) up to two
 times by default, uploads live outputs every five minutes, and emits one-minute
 resource heartbeats. Override these safeguards only when needed, for example

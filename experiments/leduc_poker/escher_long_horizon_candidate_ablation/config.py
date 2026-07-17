@@ -1,4 +1,4 @@
-"""Configuration for Experiment 42's 20x-node candidate ablation."""
+"""Configuration for Experiment 42's approximately 10x-node ablation."""
 
 from __future__ import annotations
 
@@ -13,12 +13,13 @@ from experiments.leduc_poker.escher_candidate_architecture_multiseed.config impo
 
 
 DEFAULT_SEEDS = [1234, 2025, 31415]
-BASELINE_VARIANT_ID = "experiment_28_20x_nodes"
-CANDIDATE_VARIANT_ID = "policy_q_stratified_uniform_20x_nodes"
-SOLVE_PASS_MULTIPLIER = 20
+BASELINE_VARIANT_ID = "experiment_28_10x_nodes"
+CANDIDATE_VARIANT_ID = "policy_q_stratified_uniform_10x_nodes"
+TARGET_SOLVE_PASS_MULTIPLIER = 10
 EXPERIMENT_28_SOLVE_PASSES = int(EXPERIMENT_28_CONFIG["num_iterations"]) + 1
-LONG_RUN_SOLVE_PASSES = SOLVE_PASS_MULTIPLIER * EXPERIMENT_28_SOLVE_PASSES
-LONG_RUN_NUM_ITERATIONS = LONG_RUN_SOLVE_PASSES - 1
+LONG_RUN_NUM_ITERATIONS = 800
+LONG_RUN_SOLVE_PASSES = LONG_RUN_NUM_ITERATIONS + 1
+SOLVE_PASS_MULTIPLIER = LONG_RUN_SOLVE_PASSES / EXPERIMENT_28_SOLVE_PASSES
 
 
 def _variant(
@@ -44,21 +45,22 @@ def _variant(
 VARIANTS = [
     _variant(
         BASELINE_VARIANT_ID,
-        "Experiment 28 baseline (20x solve passes)",
+        "Experiment 28 baseline (approximately 10x solve passes)",
         (
-            "Exact Experiment 28 algorithm trained for 20 times its original "
-            "number of solve passes."
+            "Exact Experiment 28 algorithm trained for approximately 10 times "
+            "its original number of solve passes."
         ),
         regret_target_baseline=AUTHOR_STATE_VALUE,
         regret_replay_mode=RESERVOIR,
     ),
     _variant(
         CANDIDATE_VARIANT_ID,
-        "Policy Q + stratified replay (20x solve passes)",
+        "Policy Q + stratified replay (approximately 10x solve passes)",
         (
             "Policy-weighted-Q targets, Experiment 28 batch-centred "
             "standardization, infoset-stratified regret replay, and uniform "
-            "fixed sampling, trained for 20 times the Experiment 28 passes."
+            "fixed sampling, trained for approximately 10 times the "
+            "Experiment 28 passes."
         ),
         regret_target_baseline=PAPER_POLICY_WEIGHTED_Q,
         regret_replay_mode=INFOSET_STRATIFIED,
@@ -76,6 +78,7 @@ DEFAULT_CONFIG.update({
     "ablation_variants": tuple(VARIANTS),
     "execution_backend": "sequential",
     "num_iterations": LONG_RUN_NUM_ITERATIONS,
+    "target_solve_pass_multiplier": TARGET_SOLVE_PASS_MULTIPLIER,
     "solve_pass_multiplier": SOLVE_PASS_MULTIPLIER,
     "experiment_28_solve_passes": EXPERIMENT_28_SOLVE_PASSES,
     "long_run_solve_passes": LONG_RUN_SOLVE_PASSES,

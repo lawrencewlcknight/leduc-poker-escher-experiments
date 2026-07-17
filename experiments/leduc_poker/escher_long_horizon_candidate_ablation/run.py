@@ -1,4 +1,4 @@
-"""CLI for Experiment 42's 20x-node ESCHER candidate ablation."""
+"""CLI for Experiment 42's approximately 10x-node ESCHER ablation."""
 
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ REPLAY_CURVE_PLOT_SPECS = [
     (
         "regret_replay_samples_per_infoset_cv_player_0",
         "CV of stored samples per player-0 infoset",
-        "ESCHER 20x-node candidate: replay imbalance by nodes touched",
+        "ESCHER 10x-node candidate: replay imbalance by nodes touched",
         "regret_replay_infoset_cv_player_0_by_nodes.png",
         None,
         None,
@@ -29,7 +29,7 @@ REPLAY_CURVE_PLOT_SPECS = [
     (
         "regret_replay_retention_fraction_player_0",
         "Retained fraction of player-0 regret stream",
-        "ESCHER 20x-node candidate: replay retention by nodes touched",
+        "ESCHER 10x-node candidate: replay retention by nodes touched",
         "regret_replay_retention_player_0_by_nodes.png",
         None,
         None,
@@ -47,16 +47,17 @@ def main(argv: Optional[List[str]] = None) -> int:
         output_root="outputs/long_horizon_candidate_ablation",
         description=(
             "Compare the Experiment 28 baseline and policy-Q stratified "
-            "candidate over a 20x solve-pass budget."
+            "candidate over an approximately 10x solve-pass budget."
         ),
         logger_name="escher_poker.experiment.long_horizon_candidate_ablation",
-        progress_label="20x-node candidate variants",
-        plot_title_prefix="ESCHER 20x-node candidate ablation",
+        progress_label="10x-node candidate variants",
+        plot_title_prefix="ESCHER 10x-node candidate ablation",
         worker_module=(
             "experiments.leduc_poker.escher_long_horizon_candidate_ablation.run"
         ),
         paired_delta_fields=PAIRED_DELTA_FIELDS,
         extra_summary_fields={
+            "target_solve_pass_multiplier": "target_solve_pass_multiplier",
             "solve_pass_multiplier": "solve_pass_multiplier",
             "experiment_28_solve_passes": "experiment_28_solve_passes",
             "long_run_solve_passes": "long_run_solve_passes",

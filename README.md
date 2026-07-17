@@ -529,21 +529,22 @@ and the three arms use three matched seeds.
 **Question:** do the strongest target and replay treatments combine, and does
 exact balanced sampling add value once both are enabled?
 
-### 42. ESCHER 20x-node long-horizon candidate ablation
+### 42. ESCHER 10x-node long-horizon candidate ablation
 
 [`experiments/leduc_poker/escher_long_horizon_candidate_ablation/`](experiments/leduc_poker/escher_long_horizon_candidate_ablation/README.md)
 
 Compares the exact Experiment 28 algorithm with the policy-weighted-Q,
 infoset-stratified, uniform-sampling candidate over three matched seeds. Both
-arms execute exactly 20 times Experiment 28's solve-pass, traversal, and
-per-pass optimizer-event budget; the maximum stack is excluded.
+arms execute 801 solve passes, approximately 9.89 times Experiment 28's
+solve-pass, traversal, and per-pass optimizer-event budget; the maximum stack
+is excluded.
 
 The long-horizon runner uses memory-stable in-place network and optimizer
 reinitialization, while the GCP submitter provides transient-VM retries,
 periodic output uploads, and resource heartbeats for multi-day runs.
 
 **Question:** does substantially longer training lower either plateau, and does
-the combined candidate develop a durable advantage near 19 million nodes?
+the combined candidate develop a durable advantage near 9.3 million nodes?
 
 ## Setup
 
@@ -688,7 +689,7 @@ python -m experiments.leduc_poker.escher_parallel_equivalence_ablation.run
 # Experiment 41 — combined candidate versus Experiment 28
 python -m experiments.leduc_poker.escher_combined_candidate_ablation.run
 
-# Experiment 42 — 20x-node long-horizon candidate comparison
+# Experiment 42 — 10x-node long-horizon candidate comparison
 python -m experiments.leduc_poker.escher_long_horizon_candidate_ablation.run
 ```
 
@@ -1258,7 +1259,7 @@ inspect a job without submitting it; `BATCH_MAX_RETRY_COUNT` and
   "escher-smoke-exp42-$(date +%Y%m%d-%H%M%S)" \
   "/usr/bin/time -v python -m experiments.leduc_poker.escher_long_horizon_candidate_ablation.run \
     --seeds 1234 \
-    --variant-ids experiment_28_20x_nodes,policy_q_stratified_uniform_20x_nodes \
+    --variant-ids experiment_28_10x_nodes,policy_q_stratified_uniform_10x_nodes \
     --iterations 2 \
     --traversals 2 \
     --value-traversals 2 \

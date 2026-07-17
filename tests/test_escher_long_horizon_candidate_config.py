@@ -1,4 +1,4 @@
-"""Configuration checks for Experiment 42's 20x-node candidate ablation."""
+"""Configuration checks for Experiment 42's 10x-node candidate ablation."""
 
 from experiments.leduc_poker.escher_candidate_architecture_multiseed.config import (
     DEFAULT_CONFIG as EXPERIMENT_28_CONFIG,
@@ -12,6 +12,7 @@ from experiments.leduc_poker.escher_long_horizon_candidate_ablation.config impor
     LONG_RUN_NUM_ITERATIONS,
     LONG_RUN_SOLVE_PASSES,
     SOLVE_PASS_MULTIPLIER,
+    TARGET_SOLVE_PASS_MULTIPLIER,
     VARIANTS,
 )
 from experiments.leduc_poker.escher_variant_config_utils import make_variant_config
@@ -32,14 +33,13 @@ def test_long_horizon_experiment_has_two_arms_and_three_seeds():
     ]
 
 
-def test_long_horizon_is_exactly_twenty_times_experiment_28_solve_passes():
+def test_long_horizon_is_approximately_ten_times_experiment_28_solve_passes():
     assert EXPERIMENT_28_SOLVE_PASSES == 81
-    assert SOLVE_PASS_MULTIPLIER == 20
-    assert LONG_RUN_SOLVE_PASSES == 1620
-    assert LONG_RUN_NUM_ITERATIONS == 1619
-    assert DEFAULT_CONFIG["num_iterations"] + 1 == (
-        SOLVE_PASS_MULTIPLIER * (EXPERIMENT_28_CONFIG["num_iterations"] + 1)
-    )
+    assert TARGET_SOLVE_PASS_MULTIPLIER == 10
+    assert LONG_RUN_SOLVE_PASSES == 801
+    assert LONG_RUN_NUM_ITERATIONS == 800
+    assert SOLVE_PASS_MULTIPLIER == 801 / 81
+    assert DEFAULT_CONFIG["num_iterations"] == 800
 
 
 def test_long_run_baseline_changes_only_training_horizon_and_metadata():
@@ -56,6 +56,7 @@ def test_long_run_baseline_changes_only_training_horizon_and_metadata():
         "intermediate_policy_training_events_expected",
         "total_policy_training_events_expected",
         "policy_gradient_steps_expected",
+        "target_solve_pass_multiplier",
         "solve_pass_multiplier",
         "experiment_28_solve_passes",
         "long_run_solve_passes",

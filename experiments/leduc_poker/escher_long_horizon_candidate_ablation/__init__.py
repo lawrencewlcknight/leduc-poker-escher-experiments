@@ -1,1 +1,1 @@
-"""Experiment 42: 20x-node ESCHER candidate ablation."""
+"""Experiment 42: approximately 10x-node ESCHER candidate ablation."""
