@@ -25,6 +25,8 @@ MAX_RUN_SECONDS="${4:-21600}"
 CPU_MILLI="${5:-4000}"
 MEMORY_MIB="${6:-16000}"
 BOOT_DISK_SIZE_GB="${7:-100}"
+MAX_RETRY_COUNT="${BATCH_MAX_RETRY_COUNT:-2}"
+OUTPUT_UPLOAD_INTERVAL_SECONDS="${BATCH_OUTPUT_UPLOAD_INTERVAL_SECONDS:-300}"
 
 : "${PROJECT_ID:?Set PROJECT_ID first}"
 : "${REGION:?Set REGION first}"
@@ -40,6 +42,8 @@ export MAX_RUN_SECONDS
 export CPU_MILLI
 export MEMORY_MIB
 export BOOT_DISK_SIZE_GB
+export MAX_RETRY_COUNT
+export OUTPUT_UPLOAD_INTERVAL_SECONDS
 export BUCKET
 export SA_EMAIL
 export JOB_JSON
@@ -58,6 +62,16 @@ max_run_seconds = os.environ["MAX_RUN_SECONDS"]
 cpu_milli = int(os.environ["CPU_MILLI"])
 memory_mib = int(os.environ["MEMORY_MIB"])
 boot_disk_size_gb = int(os.environ["BOOT_DISK_SIZE_GB"])
+max_retry_count = int(os.environ["MAX_RETRY_COUNT"])
+output_upload_interval_seconds = int(
+    os.environ["OUTPUT_UPLOAD_INTERVAL_SECONDS"]
+)
+if not 0 <= max_retry_count <= 10:
+    raise ValueError("BATCH_MAX_RETRY_COUNT must be between 0 and 10.")
+if output_upload_interval_seconds < 60:
+    raise ValueError(
+        "BATCH_OUTPUT_UPLOAD_INTERVAL_SECONDS must be at least 60."
+    )
 bucket = os.environ["BUCKET"]
 service_account = os.environ["SA_EMAIL"]
 
@@ -78,6 +92,7 @@ RESOURCE_LOG="$JOB_OUTPUT_DIR/resource_snapshots.log"
 BOOT_LOG="/tmp/{job_name}_batch_boot.log"
 BUCKET_DEST="{bucket}/{job_name}/"
 RESOURCE_MONITOR_PID=""
+OUTPUT_UPLOAD_PID=""
 
 exec > >(tee -a "$BOOT_LOG") 2>&1
 
@@ -96,6 +111,10 @@ cleanup() {{
   if [[ -n "$RESOURCE_MONITOR_PID" ]]; then
     kill "$RESOURCE_MONITOR_PID" >/dev/null 2>&1 || true
     wait "$RESOURCE_MONITOR_PID" >/dev/null 2>&1 || true
+  fi
+  if [[ -n "$OUTPUT_UPLOAD_PID" ]]; then
+    kill "$OUTPUT_UPLOAD_PID" >/dev/null 2>&1 || true
+    wait "$OUTPUT_UPLOAD_PID" >/dev/null 2>&1 || true
   fi
 
   if [[ -d "$JOB_OUTPUT_DIR" ]]; then
@@ -160,11 +179,34 @@ start_resource_monitor() {{
         ps -eo pid,ppid,pcpu,pmem,rss,vsz,comm --sort=-rss | head -25 || true
         echo
       }} >> "$RESOURCE_LOG" 2>&1
+      memory_available_kib="$(awk '/MemAvailable:/ {{print $2}}' /proc/meminfo)"
+      root_available_kib="$(df --output=avail / | awk 'NR == 2 {{print $1}}')"
+      largest_process_rss_kib="$(ps -eo rss= --sort=-rss | awk 'NR == 1 {{largest=$1}} END {{print largest}}')"
+      echo "RESOURCE_HEARTBEAT memory_available_kib=$memory_available_kib root_available_kib=$root_available_kib largest_process_rss_kib=$largest_process_rss_kib"
       sleep 60
     done
   ) &
   RESOURCE_MONITOR_PID="$!"
   echo "Started resource monitor with PID $RESOURCE_MONITOR_PID"
+}}
+
+upload_outputs() {{
+  if [[ ! -d "$REPO_DIR/outputs" ]]; then
+    return 0
+  fi
+  gcloud storage cp --recursive "$REPO_DIR/outputs" "$BUCKET_DEST"
+}}
+
+start_periodic_output_upload() {{
+  (
+    while true; do
+      sleep {output_upload_interval_seconds}
+      echo "Periodic output upload started at $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+      upload_outputs || echo "Periodic output upload failed; the next interval will retry."
+    done
+  ) &
+  OUTPUT_UPLOAD_PID="$!"
+  echo "Started periodic output upload with PID $OUTPUT_UPLOAD_PID (interval {output_upload_interval_seconds}s)"
 }}
 
 run_experiment() {{
@@ -239,6 +281,7 @@ python -m pip check || true
 
 mkdir -p "$JOB_OUTPUT_DIR"
 start_resource_monitor
+start_periodic_output_upload
 
 if run_experiment; then
   experiment_exit=0
@@ -271,7 +314,15 @@ job = {
                     "cpuMilli": cpu_milli,
                     "memoryMib": memory_mib,
                 },
-                "maxRetryCount": 0,
+                "maxRetryCount": max_retry_count,
+                "lifecyclePolicies": [
+                    {
+                        "action": "RETRY_TASK",
+                        "actionCondition": {
+                            "exitCodes": [50001, 50002, 50003, 50004]
+                        },
+                    }
+                ],
                 "maxRunDuration": f"{max_run_seconds}s",
             },
             "taskCount": 1,
@@ -310,6 +361,8 @@ echo "Max run duration: ${MAX_RUN_SECONDS}s"
 echo "CPU milli: ${CPU_MILLI}"
 echo "Memory MiB: ${MEMORY_MIB}"
 echo "Boot disk GiB: ${BOOT_DISK_SIZE_GB}"
+echo "Transient VM retry count: ${MAX_RETRY_COUNT}"
+echo "Periodic output upload interval: ${OUTPUT_UPLOAD_INTERVAL_SECONDS}s"
 echo "Job config: ${JOB_JSON}"
 
 echo
@@ -326,6 +379,11 @@ print(job["taskGroups"][0]["taskSpec"]["runnables"][0]["script"]["text"])
 PY
 echo "-----------------------------------"
 echo
+
+if [[ "${BATCH_DRY_RUN:-false}" == "true" ]]; then
+  echo "BATCH_DRY_RUN=true; job was rendered but not submitted."
+  exit 0
+fi
 
 gcloud batch jobs submit "${JOB_NAME}" \
   --location "${REGION}" \

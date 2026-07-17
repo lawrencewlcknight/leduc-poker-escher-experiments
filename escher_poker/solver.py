@@ -576,41 +576,42 @@ class ESCHERSolver(policy.Policy):
         self._verbose = verbose
 
     def _reinitialize_policy_network(self):
-        """Reinitalize policy network and optimizer for training."""
+        """Reinitialize policy parameters and optimizer state for training.
+
+        Replacing Keras models and ``tf.function`` objects at every evaluation
+        checkpoint causes TensorFlow to retain the old traced graphs. Long
+        runs can therefore grow by hundreds of MiB per checkpoint even though
+        the replay buffers are bounded. Once the model has been created, reset
+        it in place so the compiled train graph remains reusable.
+        """
         with tf.device(self._train_device):
-            self._policy_network = PolicyNetwork(self._embedding_size,
-                                                 self._policy_network_layers,
-                                                 self._num_actions,
-                                                 activation=self._policy_network_activation,
-                                                 use_layer_norm=self._policy_network_layer_norm,
-                                                 residual_mode=self._policy_network_residual_mode,
-                                                 head_depth=self._policy_network_head_depth,
-                                                 head_units=self._policy_network_head_units)
+            if hasattr(self, "_policy_network"):
+                self._reset_model_parameters(self._policy_network)
+                self._reset_optimizer_state(self._optimizer_policy)
+                return
+
+            self._policy_network = PolicyNetwork(
+                self._embedding_size,
+                self._policy_network_layers,
+                self._num_actions,
+                activation=self._policy_network_activation,
+                use_layer_norm=self._policy_network_layer_norm,
+                residual_mode=self._policy_network_residual_mode,
+                head_depth=self._policy_network_head_depth,
+                head_units=self._policy_network_head_units,
+            )
             self._build_network_once(self._policy_network, self._embedding_size)
             self._optimizer_policy = tf.keras.optimizers.Adam(
-                learning_rate=self._learning_rate)
+                learning_rate=self._learning_rate
+            )
             self._loss_policy = tf.keras.losses.MeanSquaredError()
+            self._policy_train_step = self._get_policy_train_graph()
 
     def _reinitialize_regret_network(self, player):
-        """Reinitalize player's regret network and optimizer for training."""
+        """Reinitialize a player's regret parameters and Adam state in place."""
         with tf.device(self._train_device):
-            self._regret_networks_train[player] = RegretNetwork(
-                self._embedding_size, self._regret_network_layers,
-                self._num_actions,
-                activation=self._regret_network_activation,
-                use_layer_norm=self._regret_network_layer_norm,
-                residual_mode=self._regret_network_residual_mode,
-                head_depth=self._regret_network_head_depth,
-                head_units=self._regret_network_head_units,
-                output_mode=self._regret_network_output_mode)
-            self._build_network_once(
-                self._regret_networks_train[player],
-                self._embedding_size,
-            )
-            self._optimizer_regrets[player] = tf.keras.optimizers.Adam(
-                learning_rate=self._learning_rate)
-            self._regret_train_step[player] = (
-                self._get_regret_train_graph(player))
+            self._reset_model_parameters(self._regret_networks_train[player])
+            self._reset_optimizer_state(self._optimizer_regrets[player])
 
     def get_example_info_state(self, player):
         return self._example_info_state[player]
@@ -622,22 +623,68 @@ class ESCHERSolver(policy.Policy):
         return self._example_legal_actions_mask[player]
 
     def _reinitialize_value_network(self):
-        """Reinitalize player's value network and optimizer for training."""
+        """Reinitialize value-network parameters and Adam state in place."""
         with tf.device(self._train_device):
-            self._val_network_train = ValueNetwork(
-                self._value_embedding_size,
-                self._value_network_layers,
-                activation=self._value_network_activation,
-                use_layer_norm=self._value_network_layer_norm,
-                residual_mode=self._value_network_residual_mode,
+            self._reset_model_parameters(self._val_network_train)
+            self._reset_optimizer_state(self._optimizer_value)
+
+    @staticmethod
+    def _fresh_initializer(initializer):
+        """Clone an initializer so each reset receives fresh random draws."""
+        return tf.keras.initializers.deserialize(
+            tf.keras.initializers.serialize(initializer)
+        )
+
+    def _reset_model_parameters(self, model):
+        """Reset every supported model variable without replacing the model."""
+        initializer_attributes = (
+            ("kernel", "kernel_initializer"),
+            ("bias", "bias_initializer"),
+            ("gamma", "gamma_initializer"),
+            ("beta", "beta_initializer"),
+            ("moving_mean", "moving_mean_initializer"),
+            ("moving_variance", "moving_variance_initializer"),
+        )
+        initializer_by_variable_id = {}
+        for layer in model.submodules:
+            for variable_name, initializer_name in initializer_attributes:
+                variable = getattr(layer, variable_name, None)
+                initializer = getattr(layer, initializer_name, None)
+                if variable is None or initializer is None:
+                    continue
+                initializer_by_variable_id[id(variable)] = initializer
+
+        # Keras records model weights in build order. Replaying initializers in
+        # that same order preserves the random-number draw sequence used when
+        # a replacement model was constructed by the original implementation.
+        reset_variable_ids = set()
+        for variable in model.weights:
+            initializer = initializer_by_variable_id.get(id(variable))
+            if initializer is None:
+                continue
+            fresh_initializer = self._fresh_initializer(initializer)
+            variable.assign(fresh_initializer(variable.shape, dtype=variable.dtype))
+            reset_variable_ids.add(id(variable))
+
+        unhandled = [
+            variable.name
+            for variable in model.weights
+            if id(variable) not in reset_variable_ids
+        ]
+        if unhandled:
+            raise RuntimeError(
+                "Cannot safely reinitialize unsupported model variables: "
+                + ", ".join(unhandled)
             )
-            self._build_network_once(
-                self._val_network_train,
-                self._value_embedding_size,
-            )
-            self._optimizer_value = tf.keras.optimizers.Adam(
-                learning_rate=self._learning_rate)
-            self._value_train_step = (self._get_value_train_graph())
+
+    def _reset_optimizer_state(self, optimizer):
+        """Return an existing optimizer to the state of a fresh Adam."""
+        optimizer_variables = optimizer.variables
+        if callable(optimizer_variables):
+            optimizer_variables = optimizer_variables()
+        for variable in optimizer_variables:
+            variable.assign(tf.zeros_like(variable))
+        self._set_optimizer_learning_rate(optimizer, self._learning_rate)
 
     def _build_network_once(self, model, input_size):
         """Create Keras variables before the network enters a tf.function."""
@@ -2473,6 +2520,55 @@ class ESCHERSolver(policy.Policy):
 
         return test_step
 
+    def _get_policy_train_graph(self):
+        """Return the reusable TF graph for one average-policy train step."""
+
+        @tf.function(reduce_retracing=True)
+        def train_step(
+            info_states,
+            action_probs,
+            iterations,
+            masks,
+            reach_probs,
+            obs_indices,
+            current_iteration,
+        ):
+            model = self._policy_network
+            del obs_indices
+            with tf.GradientTape() as tape:
+                preds = model((info_states, masks), training=True)
+                if self._average_policy_weighting == "linear":
+                    base_weights = tf.squeeze(iterations, axis=-1) * (
+                        2.0 / current_iteration
+                    )
+                else:
+                    base_weights = tf.ones_like(
+                        tf.squeeze(iterations, axis=-1),
+                        dtype=tf.float32,
+                    )
+                if self._use_reach_weighted_avg_policy_loss:
+                    reach_weights = tf.squeeze(reach_probs, axis=-1)
+                    reach_weights = tf.clip_by_value(reach_weights, 1e-8, 1.0)
+                    reach_weights = reach_weights / (
+                        tf.reduce_mean(reach_weights) + 1e-8
+                    )
+                    sample_weight = base_weights * reach_weights
+                else:
+                    sample_weight = base_weights
+                main_loss = self._loss_policy(
+                    action_probs,
+                    preds,
+                    sample_weight=sample_weight,
+                )
+                loss = tf.add_n([main_loss], model.losses)
+            gradients = tape.gradient(loss, model.trainable_variables)
+            self._optimizer_policy.apply_gradients(
+                zip(gradients, model.trainable_variables)
+            )
+            return main_loss
+
+        return train_step
+
     def _learn_value_network(self):
         """Compute the loss on sampled transitions and perform a Q-network update.
 
@@ -2601,45 +2697,14 @@ class ESCHERSolver(policy.Policy):
           or `None`.
         """
 
-        @tf.function
-        def train_step(info_states, action_probs, iterations, masks, reach_probs, obs_indices):
-            model = self._policy_network
-            del obs_indices
-            with tf.GradientTape() as tape:
-                preds = model((info_states, masks), training=True)
-                if self._average_policy_weighting == "linear":
-                    base_weights = tf.squeeze(iterations, axis=-1) * (
-                        2.0 / tf.cast(self._iteration, tf.float32)
-                    )
-                else:
-                    base_weights = tf.ones_like(
-                        tf.squeeze(iterations, axis=-1),
-                        dtype=tf.float32,
-                    )
-                if self._use_reach_weighted_avg_policy_loss:
-                    reach_weights = tf.squeeze(reach_probs, axis=-1)
-                    reach_weights = tf.clip_by_value(reach_weights, 1e-8, 1.0)
-                    reach_weights = reach_weights / (
-                        tf.reduce_mean(reach_weights) + 1e-8
-                    )
-                    sample_weight = base_weights * reach_weights
-                else:
-                    sample_weight = base_weights
-                main_loss = self._loss_policy(
-                    action_probs,
-                    preds,
-                    sample_weight=sample_weight,
-                )
-                loss = tf.add_n([main_loss], model.losses)
-            gradients = tape.gradient(loss, model.trainable_variables)
-            self._optimizer_policy.apply_gradients(
-                zip(gradients, model.trainable_variables))
-            return main_loss
-
         with tf.device(self._train_device):
+            current_iteration = tf.constant(
+                self._iteration,
+                dtype=tf.float32,
+            )
             data = self._get_average_policy_dataset()
             for d in data.take(self._policy_network_train_steps):
-                main_loss = train_step(*d)
+                main_loss = self._policy_train_step(*d, current_iteration)
 
         return main_loss
     

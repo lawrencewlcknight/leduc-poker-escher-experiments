@@ -538,6 +538,10 @@ infoset-stratified, uniform-sampling candidate over three matched seeds. Both
 arms execute exactly 20 times Experiment 28's solve-pass, traversal, and
 per-pass optimizer-event budget; the maximum stack is excluded.
 
+The long-horizon runner uses memory-stable in-place network and optimizer
+reinitialization, while the GCP submitter provides transient-VM retries,
+periodic output uploads, and resource heartbeats for multi-day runs.
+
 **Question:** does substantially longer training lower either plateau, and does
 the combined candidate develop a durable advantage near 19 million nodes?
 
@@ -692,6 +696,11 @@ For quick GCP smoke tests, first make sure the environment variables required
 by `gcp/submit_batch_experiment.sh` are set: `PROJECT_ID`, `REGION`, `BUCKET`,
 and `SA_EMAIL`. Then paste any of the following commands from the repository
 root. Each command submits a separate Google Batch job.
+
+Batch tasks retry transient VM failures (`50001`-`50004`) twice and upload live
+outputs every five minutes by default. Set `BATCH_DRY_RUN=true` to render and
+inspect a job without submitting it; `BATCH_MAX_RETRY_COUNT` and
+`BATCH_OUTPUT_UPLOAD_INTERVAL_SECONDS` override the reliability defaults.
 
 ```bash
 # Experiment 1 smoke test

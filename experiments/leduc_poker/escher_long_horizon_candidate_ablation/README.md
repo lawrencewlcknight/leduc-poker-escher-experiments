@@ -44,6 +44,11 @@ days on the Experiment 28 machine type. The runner writes each completed
 seed/variant result incrementally, so completed work remains available if a
 later run fails.
 
+The solver resets reinitialized network parameters and Adam state in place.
+This is numerically equivalent to constructing fresh networks under the same
+random seed, but reuses TensorFlow's compiled train graphs so memory does not
+grow at every training/evaluation checkpoint.
+
 ## Smoke test
 
 The smoke test overrides the long horizon solely to verify both algorithm
@@ -77,8 +82,16 @@ AUC, runtime, replay-composition, and checkpoint outputs for both arms.
   "escher-exp42-$(date +%Y%m%d-%H%M%S)" \
   "/usr/bin/time -v python -m experiments.leduc_poker.escher_long_horizon_candidate_ablation.run \
     --output-root outputs/cloud/escher-exp42" \
-  "n2-standard-4" "432000" "4000" "16000" "100"
+  "n2-standard-8" "604800" "8000" "32000" "100"
 ```
+
+The seven-day task limit leaves headroom over the approximately four-day
+projection obtained by multiplying Experiment 28's measured per-seed runtime.
+The Batch submitter retries transient VM failures (`50001`-`50004`) up to two
+times by default, uploads live outputs every five minutes, and emits one-minute
+resource heartbeats. Override these safeguards only when needed, for example
+with `BATCH_MAX_RETRY_COUNT=3` or
+`BATCH_OUTPUT_UPLOAD_INTERVAL_SECONDS=600`.
 
 The principal endpoints are paired final exploitability, the mean over the
 final checkpoint window, node-normalised exploitability AUC, and the shape of
