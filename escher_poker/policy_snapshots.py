@@ -129,7 +129,7 @@ def save_policy_snapshot(
 ) -> None:
     """Save only the playable average-policy network and lightweight metadata."""
     snapshot = {
-        "version": 1,
+        "version": 2,
         "type": "escher_policy_snapshot",
         "algorithm": "ESCHER",
         "game": str(config.get("game_name", "leduc_poker")),
@@ -141,6 +141,19 @@ def save_policy_snapshot(
         "stage_label": str(stage_label),
         "policy_weights": solver.get_policy_weights(),
         "policy_network_layers": list(config["policy_network_layers"]),
+        "policy_network_activation": str(
+            config.get("policy_network_activation", "leakyrelu")
+        ),
+        "policy_network_layer_norm": bool(
+            config.get("policy_network_layer_norm", True)
+        ),
+        "policy_network_residual_mode": str(
+            config.get("policy_network_residual_mode", "same_width")
+        ),
+        "policy_network_head_depth": int(
+            config.get("policy_network_head_depth", 0)
+        ),
+        "policy_network_head_units": config.get("policy_network_head_units"),
         "input_size": int(getattr(solver, "_embedding_size")),
         "num_actions": int(getattr(solver, "_num_actions")),
     }
@@ -188,10 +201,28 @@ class LoadedESCHERPolicy(policy.Policy):
         self.input_size = int(input_size)
         self.policy_network_layers = tuple(policy_network_layers)
         self.num_actions = int(num_actions)
+        self.policy_network_activation = str(
+            snapshot.get("policy_network_activation", "leakyrelu")
+        )
+        self.policy_network_layer_norm = bool(
+            snapshot.get("policy_network_layer_norm", True)
+        )
+        self.policy_network_residual_mode = str(
+            snapshot.get("policy_network_residual_mode", "same_width")
+        )
+        self.policy_network_head_depth = int(
+            snapshot.get("policy_network_head_depth", 0)
+        )
+        self.policy_network_head_units = snapshot.get("policy_network_head_units")
         self._policy_network = PolicyNetwork(
             self.input_size,
             self.policy_network_layers,
             self.num_actions,
+            activation=self.policy_network_activation,
+            use_layer_norm=self.policy_network_layer_norm,
+            residual_mode=self.policy_network_residual_mode,
+            head_depth=self.policy_network_head_depth,
+            head_units=self.policy_network_head_units,
         )
         dummy_x = tf.zeros((1, self.input_size), dtype=tf.float32)
         dummy_mask = tf.ones((1, self.num_actions), dtype=tf.float32)

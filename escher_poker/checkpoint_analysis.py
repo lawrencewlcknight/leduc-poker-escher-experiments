@@ -150,6 +150,11 @@ def analyze_checkpoint_snapshots(
             "path": row["path"],
             "nodes_visited": pol.nodes_visited,
             "policy_layers": str(pol.policy_network_layers),
+            "policy_activation": pol.policy_network_activation,
+            "policy_layer_norm": pol.policy_network_layer_norm,
+            "policy_residual_mode": pol.policy_network_residual_mode,
+            "policy_head_depth": pol.policy_network_head_depth,
+            "policy_head_units": pol.policy_network_head_units,
             "input_size": pol.input_size,
             "num_actions": pol.num_actions,
         })
@@ -165,6 +170,11 @@ def analyze_checkpoint_snapshots(
             "path": row["path"],
             "nodes_visited": pol.nodes_visited,
             "policy_layers": str(pol.policy_network_layers),
+            "policy_activation": pol.policy_network_activation,
+            "policy_layer_norm": pol.policy_network_layer_norm,
+            "policy_residual_mode": pol.policy_network_residual_mode,
+            "policy_head_depth": pol.policy_network_head_depth,
+            "policy_head_units": pol.policy_network_head_units,
             "input_size": pol.input_size,
             "num_actions": pol.num_actions,
         })

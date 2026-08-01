@@ -1137,8 +1137,20 @@ class ESCHERSolver(policy.Policy):
         print(sum(squared_errors) / len(squared_errors), "Mean Squared Errors")
         print(sum(squared_errors_child) / len(squared_errors_child), "Mean Squared Errors Child")
 
-    def solve(self, save_path_convs=None):
+    def solve(self, save_path_convs=None, post_evaluation_callback=None):
         """Run ESCHER training and collect thesis-style diagnostics.
+
+        Args:
+          save_path_convs: Optional prefix used by the legacy NumPy curve
+            exporter.
+          post_evaluation_callback: Optional callable invoked as
+            ``callback(self, evaluation_iteration)`` after the average-policy
+            network has been fitted and evaluated at an intermediate
+            checkpoint. ``evaluation_iteration`` is the configured zero-based
+            solve-loop index (the same convention as ``num_iterations``),
+            while ``self._iteration`` records the completed solve-pass count.
+            This permits lightweight policy snapshots without stopping or
+            restarting training.
 
         Returns:
           regret_losses: dict[player -> list[float]]
@@ -1439,6 +1451,9 @@ class ESCHERSolver(policy.Policy):
 
                         if self._verbose:
                             print(self._iteration, num_nodes, conv, avg_policy_value)
+
+                        if post_evaluation_callback is not None:
+                            post_evaluation_callback(self, int(i))
 
         # Train the final policy network so the returned solver is immediately playable.
         self._reinitialize_policy_network()

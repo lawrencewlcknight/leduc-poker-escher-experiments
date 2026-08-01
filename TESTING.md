@@ -86,6 +86,35 @@ python -m experiments.leduc_poker.escher_checkpoint_stability.run \
 
 This should produce checkpoint summaries, policy snapshots, exact head-to-head matrices, and PNG plots.
 
+Run the long-horizon temporal head-to-head experiment at a tiny one-seed
+budget:
+
+```bash
+python -m experiments.leduc_poker.escher_final_candidate_checkpoint_head_to_head.run \
+  --seeds 1234 \
+  --iterations 5 \
+  --checkpoint-schedule 1,2,3,4,5 \
+  --evaluation-interval 1 \
+  --traversals 2 \
+  --value-traversals 2 \
+  --policy-network-train-steps 1 \
+  --regret-network-train-steps 1 \
+  --value-network-train-steps 1 \
+  --policy-network-layers 8,8 \
+  --regret-network-layers 8,8 \
+  --value-network-layers 8,8 \
+  --batch-size-regret 2 \
+  --batch-size-value 2 \
+  --batch-size-average-policy 2 \
+  --memory-capacity 128 \
+  --output-root outputs/smoke_tests
+```
+
+This should save five policies without restarting training, produce 25 ordered
+exact head-to-head values and ten later-versus-earlier pairwise inference rows,
+and render node-labelled temporal charts. The experiment-specific README also
+contains the equivalent GCP smoke command.
+
 Run a tiny constrained hyperparameter-search experiment:
 
 ```bash

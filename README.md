@@ -105,7 +105,8 @@ The repository is organised so that each experiment can be run independently whi
 │       ├── escher_fixed_sampling_coverage_ablation/ # Experiment 39
 │       ├── escher_parallel_equivalence_ablation/    # Experiment 40
 │       ├── escher_combined_candidate_ablation/      # Experiment 41
-│       └── escher_long_horizon_candidate_ablation/  # Experiment 42
+│       ├── escher_long_horizon_candidate_ablation/  # Experiment 42
+│       └── escher_final_candidate_checkpoint_head_to_head/ # Experiment 43
 ├── docs/
 │   └── OUTPUT_CONVENTIONS.md
 ├── notebooks/                                        # Original notebook archive
@@ -546,6 +547,20 @@ periodic output uploads, and resource heartbeats for multi-day runs.
 **Question:** does substantially longer training lower either plateau, and does
 the combined candidate develop a durable advantage near 9.3 million nodes?
 
+### 43. ESCHER long-horizon temporal checkpoint head-to-head
+
+[`experiments/leduc_poker/escher_final_candidate_checkpoint_head_to_head/`](experiments/leduc_poker/escher_final_candidate_checkpoint_head_to_head/README.md)
+
+Trains the Experiment 28 configuration in one uninterrupted trajectory per
+seed to approximately 15 million nodes, saving five lightweight average-policy
+snapshots at 20% intervals. Every checkpoint pair is evaluated exactly in both
+seat assignments. The primary statistical unit is the independent training
+seed, with exact sign-flip inference and Holm correction for the secondary
+checkpoint-pair tests.
+
+**Question:** does lower exploitability over long-horizon ESCHER training
+correspond to statistically consistent improvement in direct head-to-head play?
+
 ## Setup
 
 Create and activate a Python 3.9 virtual environment. The repository contains
@@ -691,6 +706,9 @@ python -m experiments.leduc_poker.escher_combined_candidate_ablation.run
 
 # Experiment 42 — 10x-node long-horizon candidate comparison
 python -m experiments.leduc_poker.escher_long_horizon_candidate_ablation.run
+
+# Experiment 43 — approximately 15M-node temporal checkpoint head-to-head
+python -m experiments.leduc_poker.escher_final_candidate_checkpoint_head_to_head.run
 ```
 
 For quick GCP smoke tests, first make sure the environment variables required
@@ -1272,6 +1290,29 @@ inspect a job without submitting it; `BATCH_MAX_RETRY_COUNT` and
     --batch-size-average-policy 2 \
     --memory-capacity 128 \
     --output-root outputs/cloud/escher-smoke-exp42" \
+  "n2-standard-4" "3600" "4000" "16000" "100"
+
+# Experiment 43 smoke test
+./gcp/submit_batch_experiment.sh \
+  "escher-smoke-exp43-$(date +%Y%m%d-%H%M%S)" \
+  "/usr/bin/time -v python -m experiments.leduc_poker.escher_final_candidate_checkpoint_head_to_head.run \
+    --seeds 1234 \
+    --iterations 5 \
+    --checkpoint-schedule 1,2,3,4,5 \
+    --evaluation-interval 1 \
+    --traversals 2 \
+    --value-traversals 2 \
+    --policy-network-train-steps 1 \
+    --regret-network-train-steps 1 \
+    --value-network-train-steps 1 \
+    --policy-network-layers 8,8 \
+    --regret-network-layers 8,8 \
+    --value-network-layers 8,8 \
+    --batch-size-regret 2 \
+    --batch-size-value 2 \
+    --batch-size-average-policy 2 \
+    --memory-capacity 128 \
+    --output-root outputs/cloud/escher-smoke-exp43" \
   "n2-standard-4" "3600" "4000" "16000" "100"
 ```
 
