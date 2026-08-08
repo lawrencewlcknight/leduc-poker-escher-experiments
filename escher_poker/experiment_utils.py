@@ -249,6 +249,57 @@ def normalised_auc(x: Iterable[float], y: Iterable[float]) -> float:
     return float(np.trapz(y_arr[finite], x_finite) / span)
 
 
+def normalised_auc_over_range(
+    x: Iterable[float],
+    y: Iterable[float],
+    start: float,
+    end: float,
+    *,
+    hold_boundary_values: bool = False,
+) -> float:
+    """Return node-normalised AUC over an explicit interval.
+
+    Interior boundary values are linearly interpolated. When
+    ``hold_boundary_values`` is true, the nearest observation is carried to a
+    boundary lying just outside the observed range. This makes a fixed 0--15M
+    budget well defined when stochastic node counts finish slightly short of
+    the nominal endpoint.
+    """
+    if end <= start:
+        raise ValueError("AUC range end must be greater than start")
+    x_arr = safe_array(x)
+    y_arr = safe_array(y)
+    finite = np.isfinite(x_arr) & np.isfinite(y_arr)
+    if np.count_nonzero(finite) < 2:
+        return np.nan
+
+    x_finite = x_arr[finite]
+    y_finite = y_arr[finite]
+    order = np.argsort(x_finite, kind="stable")
+    x_finite = x_finite[order]
+    y_finite = y_finite[order]
+    unique_x, unique_indices = np.unique(x_finite, return_index=True)
+    x_finite = unique_x
+    y_finite = y_finite[unique_indices]
+    if x_finite.size < 2:
+        return np.nan
+    if not hold_boundary_values and (
+        start < float(x_finite[0]) or end > float(x_finite[-1])
+    ):
+        return np.nan
+
+    y_start = float(
+        np.interp(start, x_finite, y_finite, left=y_finite[0], right=y_finite[-1])
+    )
+    y_end = float(
+        np.interp(end, x_finite, y_finite, left=y_finite[0], right=y_finite[-1])
+    )
+    interior = (x_finite > start) & (x_finite < end)
+    x_window = np.concatenate(([start], x_finite[interior], [end]))
+    y_window = np.concatenate(([y_start], y_finite[interior], [y_end]))
+    return float(np.trapz(y_window, x_window) / (end - start))
+
+
 def first_nodes_to_threshold(
     nodes: Iterable[float],
     metric: Iterable[float],
@@ -306,6 +357,22 @@ def run_single_seed(
     game = pyspiel.load_game(config["game_name"])
     solver = make_escher_solver(game, config)
 
+    record_initial = bool(config.get("record_initial_policy_evaluation", False))
+    initial_exploitability = np.nan
+    initial_policy_value = np.nan
+    if record_initial:
+        initial_policy = policy.tabular_policy_from_callable(
+            game, solver.action_probabilities
+        )
+        initial_exploitability = float(
+            exploitability.nash_conv(game, initial_policy) / 2.0
+        )
+        initial_policy_value = float(
+            expected_game_score.policy_value(
+                game.new_initial_state(), [initial_policy] * game.num_players()
+            )[0]
+        )
+
     (
         _regret_losses,
         _policy_loss,
@@ -320,6 +387,29 @@ def run_single_seed(
     avg_policy_values = np.asarray(avg_policy_values, dtype=np.float64)
     value_error = np.abs(avg_policy_values - LEDUC_GAME_VALUE_PLAYER_0)
     diagnostics = {k: np.asarray(v) for k, v in diagnostics.items()}
+
+    if record_initial:
+        exploitability_curve = np.concatenate(
+            ([initial_exploitability], exploitability_curve)
+        )
+        nodes_touched = np.concatenate(([0.0], nodes_touched))
+        avg_policy_values = np.concatenate(([initial_policy_value], avg_policy_values))
+        value_error = np.concatenate(([
+            abs(initial_policy_value - LEDUC_GAME_VALUE_PLAYER_0)
+        ], value_error))
+        for key, values in diagnostics.items():
+            if key == "iteration":
+                initial_value = -1
+            elif key == "wall_clock_seconds":
+                initial_value = 0.0
+            elif "_buffer_size" in key or "_count" in key:
+                initial_value = 0
+            elif np.issubdtype(values.dtype, np.number):
+                initial_value = np.nan
+            else:
+                initial_value = ""
+            diagnostics[key] = np.concatenate(([initial_value], values))
+
     iterations = diagnostics["iteration"].astype(int)
     wall_clock = diagnostics["wall_clock_seconds"].astype(float)
 
@@ -329,11 +419,63 @@ def run_single_seed(
         game.new_initial_state(), [final_policy] * game.num_players()
     )[0]
 
+    auc_start_nodes = float(config.get("trajectory_auc_start_nodes", 0.0))
+    configured_auc_end = config.get("trajectory_auc_end_nodes")
+    auc_end_nodes = (
+        float(nodes_touched[-1])
+        if configured_auc_end is None
+        else float(configured_auc_end)
+    )
+    hold_auc_boundaries = bool(config.get("trajectory_auc_hold_boundaries", False))
+    observed_start = float(np.min(nodes_touched))
+    observed_end = float(np.max(nodes_touched))
+    observed_overlap = max(
+        0.0,
+        min(observed_end, auc_end_nodes) - max(observed_start, auc_start_nodes),
+    )
+    auc_span = auc_end_nodes - auc_start_nodes
+    auc_coverage_fraction = observed_overlap / auc_span if auc_span > 0 else np.nan
+    normalised_auc_0_to_target = normalised_auc_over_range(
+        nodes_touched,
+        exploitability_curve,
+        auc_start_nodes,
+        auc_end_nodes,
+        hold_boundary_values=hold_auc_boundaries,
+    )
+
+    final_window_width_nodes = float(config.get("final_window_width_nodes", 0.0))
+    final_window_end_nodes = auc_end_nodes
+    final_window_start_nodes = max(
+        auc_start_nodes,
+        final_window_end_nodes - final_window_width_nodes,
+    )
+    node_window_mean = normalised_auc_over_range(
+        nodes_touched,
+        exploitability_curve,
+        final_window_start_nodes,
+        final_window_end_nodes,
+        hold_boundary_values=hold_auc_boundaries,
+    )
+
     summary = {
         "seed": int(seed),
         "final_exploitability": float(exploitability_curve[-1]),
         "best_exploitability": float(np.min(exploitability_curve)),
-        "final_window_mean_exploitability": final_window_mean(exploitability_curve),
+        "final_window_mean_exploitability": (
+            node_window_mean
+            if final_window_width_nodes > 0
+            else final_window_mean(exploitability_curve)
+        ),
+        "final_checkpoint_window_mean_exploitability": final_window_mean(
+            exploitability_curve
+        ),
+        "final_window_start_nodes": final_window_start_nodes,
+        "final_window_end_nodes": final_window_end_nodes,
+        "normalised_auc_exploitability_0_to_target_nodes": normalised_auc_0_to_target,
+        "auc_start_nodes": auc_start_nodes,
+        "auc_end_nodes": auc_end_nodes,
+        "auc_observed_coverage_fraction": auc_coverage_fraction,
+        "auc_boundary_hold_enabled": bool(hold_auc_boundaries),
         "final_policy_value": float(final_policy_value),
         "final_policy_value_error": float(abs(final_policy_value - LEDUC_GAME_VALUE_PLAYER_0)),
         "best_policy_value_error": float(np.min(value_error)),
@@ -364,6 +506,12 @@ def run_single_seed(
         "exploitability": exploitability_curve,
         "average_policy_value": avg_policy_values,
         "policy_value_error": value_error,
+        "is_initial_policy_evaluation": np.asarray(
+            [True] + [False] * (len(iterations) - 1)
+            if record_initial
+            else [False] * len(iterations),
+            dtype=bool,
+        ),
         "diagnostics": diagnostics,
         "summary": summary,
     }
@@ -716,21 +864,38 @@ def export_seed_summary(run_dir: Path, results: List[Dict[str, Any]]) -> Dict[st
 
 
 def export_checkpoint_curves(run_dir: Path, results: List[Dict[str, Any]]) -> None:
-    curve_csv = run_dir / "checkpoint_curves.csv"
+    _export_trajectory_rows(
+        run_dir / "checkpoint_curves.csv",
+        results,
+        include_checkpoint_index=False,
+    )
+
+
+def _export_trajectory_rows(
+    path: Path,
+    results: List[Dict[str, Any]],
+    *,
+    include_checkpoint_index: bool,
+) -> None:
+    """Write one row for every in-training policy evaluation and seed."""
     curve_fields = [
-        "seed", "iteration", "nodes_touched", "wall_clock_seconds", "exploitability",
+        "seed", "checkpoint_index", "is_initial_policy_evaluation", "iteration", "nodes_touched",
+        "wall_clock_seconds", "exploitability",
         "average_policy_value", "policy_value_error", "policy_loss", "value_loss",
         "value_test_loss", "regret_loss_player_0", "regret_loss_player_1",
         "average_policy_buffer_size", "regret_buffer_size_player_0",
         "regret_buffer_size_player_1", "value_buffer_size", "value_test_buffer_size",
     ]
-    with open(curve_csv, "w", newline="", encoding="utf-8") as f:
+    if not include_checkpoint_index:
+        curve_fields.remove("checkpoint_index")
+        curve_fields.remove("is_initial_policy_evaluation")
+    with open(path, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=curve_fields)
         writer.writeheader()
         for result in results:
             diag = result["diagnostics"]
             for i, iteration in enumerate(result["iterations"]):
-                writer.writerow({
+                row = {
                     "seed": result["seed"],
                     "iteration": int(iteration),
                     "nodes_touched": float(result["nodes_touched"][i]),
@@ -748,4 +913,100 @@ def export_checkpoint_curves(run_dir: Path, results: List[Dict[str, Any]]) -> No
                     "regret_buffer_size_player_1": int(diag["regret_buffer_size_player_1"][i]),
                     "value_buffer_size": int(diag["value_buffer_size"][i]),
                     "value_test_buffer_size": int(diag["value_test_buffer_size"][i]),
-                })
+                }
+                if include_checkpoint_index:
+                    row["checkpoint_index"] = int(i)
+                    initial_flags = result.get("is_initial_policy_evaluation")
+                    row["is_initial_policy_evaluation"] = bool(
+                        initial_flags[i] if initial_flags is not None else False
+                    )
+                writer.writerow(row)
+
+
+def export_trajectory_history(run_dir: Path, results: List[Dict[str, Any]]) -> None:
+    """Export dense per-seed and aggregate exploitability trajectories.
+
+    ``trajectory_history.csv`` is the canonical comparison input: it preserves
+    every policy evaluation returned by :meth:`ESCHERSolver.solve`, rather than
+    only a small set of policy snapshots. ``trajectory_summary.csv`` contains
+    pointwise cross-seed statistics for convenient plotting. Seeds share the
+    configured evaluation schedule, so checkpoint index is the alignment key;
+    actual node counts remain the x-axis values.
+    """
+    if not results:
+        raise ValueError("At least one completed seed is required")
+
+    _export_trajectory_rows(
+        run_dir / "trajectory_history.csv",
+        results,
+        include_checkpoint_index=True,
+    )
+
+    lengths = {len(result["iterations"]) for result in results}
+    if len(lengths) != 1:
+        raise ValueError(
+            "All seed trajectories must contain the same number of evaluation points"
+        )
+
+    summary_path = run_dir / "trajectory_summary.csv"
+    summary_fields = [
+        "checkpoint_index",
+        "is_initial_policy_evaluation",
+        "iteration",
+        "mean_nodes_touched",
+        "mean_wall_clock_seconds",
+        "std_wall_clock_seconds",
+        "se_wall_clock_seconds",
+        "mean_exploitability",
+        "std_exploitability",
+        "se_exploitability",
+        "n_seeds",
+    ]
+    with open(summary_path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=summary_fields)
+        writer.writeheader()
+        for i in range(next(iter(lengths))):
+            exploitability_values = np.asarray(
+                [result["exploitability"][i] for result in results],
+                dtype=np.float64,
+            )
+            nodes_values = np.asarray(
+                [result["nodes_touched"][i] for result in results],
+                dtype=np.float64,
+            )
+            wall_clock_values = np.asarray(
+                [result["wall_clock_seconds"][i] for result in results],
+                dtype=np.float64,
+            )
+            finite = exploitability_values[np.isfinite(exploitability_values)]
+            n_finite = int(finite.size)
+            std = float(np.std(finite, ddof=1)) if n_finite > 1 else 0.0
+            wall_clock_std = (
+                float(np.std(wall_clock_values, ddof=1))
+                if wall_clock_values.size > 1
+                else 0.0
+            )
+            writer.writerow({
+                "checkpoint_index": int(i),
+                "is_initial_policy_evaluation": bool(
+                    results[0].get(
+                        "is_initial_policy_evaluation",
+                        np.zeros(next(iter(lengths)), dtype=bool),
+                    )[i]
+                ),
+                "iteration": int(results[0]["iterations"][i]),
+                "mean_nodes_touched": float(np.mean(nodes_values)),
+                "mean_wall_clock_seconds": float(np.mean(wall_clock_values)),
+                "std_wall_clock_seconds": wall_clock_std,
+                "se_wall_clock_seconds": float(
+                    wall_clock_std / np.sqrt(wall_clock_values.size)
+                ),
+                "mean_exploitability": (
+                    float(np.mean(finite)) if n_finite else np.nan
+                ),
+                "std_exploitability": std if n_finite else np.nan,
+                "se_exploitability": (
+                    float(std / np.sqrt(n_finite)) if n_finite else np.nan
+                ),
+                "n_seeds": n_finite,
+            })

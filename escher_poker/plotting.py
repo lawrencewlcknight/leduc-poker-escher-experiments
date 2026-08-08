@@ -118,11 +118,50 @@ def plot_multiseed_results(
     )
     ax.set_xlabel("Nodes touched")
     ax.set_ylabel("Exploitability (NashConv/2)")
+    ax.set_xlim(left=0)
     set_chart_title(ax, "Leduc Poker ESCHER: Exploitability by Nodes Touched")
     ax.grid(True)
     ax.legend()
     fig.tight_layout()
     fig.savefig(run_dir / "exploitability_by_nodes_multiseed.png", dpi=200, bbox_inches="tight")
+    plt.close(fig)
+
+    wall_clock_mat = _stack_curve(results, "wall_clock_seconds")
+    mean_wall_clock_hours = np.mean(wall_clock_mat, axis=0) / 3_600.0
+    fig, ax = plt.subplots(figsize=(8, 5))
+    for result in results:
+        ax.plot(
+            np.asarray(result["wall_clock_seconds"], dtype=np.float64) / 3_600.0,
+            result["exploitability"],
+            alpha=0.25,
+            linewidth=1,
+        )
+    ax.plot(
+        mean_wall_clock_hours,
+        mean_exploitability,
+        linewidth=2,
+        label="Mean across seeds",
+    )
+    ax.fill_between(
+        mean_wall_clock_hours,
+        mean_exploitability - se_exploitability,
+        mean_exploitability + se_exploitability,
+        alpha=0.2,
+        label="Mean $\\pm$ s.e.",
+    )
+    ax.axhline(
+        NASH_EXPLOITABILITY_TARGET,
+        linestyle="--",
+        label=NASH_EXPLOITABILITY_TARGET_LABEL,
+    )
+    ax.set_xlabel("Training wall-clock time (hours)")
+    ax.set_ylabel("Exploitability (NashConv/2)")
+    ax.set_xlim(left=0)
+    set_chart_title(ax, "Leduc Poker ESCHER: Exploitability by Training Time")
+    ax.grid(True)
+    ax.legend()
+    fig.tight_layout()
+    fig.savefig(run_dir / "exploitability_by_time_multiseed.png", dpi=200, bbox_inches="tight")
     plt.close(fig)
 
     fig, ax = plt.subplots(figsize=(8, 5))
@@ -143,6 +182,7 @@ def plot_multiseed_results(
     )
     ax.set_xlabel("Nodes touched")
     ax.set_ylabel("Average policy value")
+    ax.set_xlim(left=0)
     set_chart_title(ax, "Leduc Poker ESCHER: Average Policy Value by Nodes Touched")
     ax.grid(True)
     ax.legend()
@@ -180,6 +220,16 @@ def plot_diagnostics(results: List[Dict[str, Any]], run_dir: str | Path) -> None
     regret_loss_p1_mat = np.vstack([result["diagnostics"]["regret_loss_player_1"].astype(float) for result in results])
     value_loss_mat = np.vstack([result["diagnostics"]["value_loss"].astype(float) for result in results])
     value_test_loss_mat = np.vstack([result["diagnostics"]["value_test_loss"].astype(float) for result in results])
+
+    # An optional exact node-zero policy evaluation has no corresponding
+    # training losses. Exclude that synthetic diagnostic position.
+    trained = iterations >= 0
+    iterations = iterations[trained]
+    policy_loss_mat = policy_loss_mat[:, trained]
+    regret_loss_p0_mat = regret_loss_p0_mat[:, trained]
+    regret_loss_p1_mat = regret_loss_p1_mat[:, trained]
+    value_loss_mat = value_loss_mat[:, trained]
+    value_test_loss_mat = value_test_loss_mat[:, trained]
 
     fig, ax = plt.subplots(figsize=(8, 5))
     ax.plot(iterations, np.nanmean(policy_loss_mat, axis=0), linewidth=2, label="Policy loss")

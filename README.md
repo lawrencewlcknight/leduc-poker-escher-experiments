@@ -106,7 +106,8 @@ The repository is organised so that each experiment can be run independently whi
 │       ├── escher_parallel_equivalence_ablation/    # Experiment 40
 │       ├── escher_combined_candidate_ablation/      # Experiment 41
 │       ├── escher_long_horizon_candidate_ablation/  # Experiment 42
-│       └── escher_final_candidate_checkpoint_head_to_head/ # Experiment 43
+│       ├── escher_final_candidate_checkpoint_head_to_head/ # Experiment 43
+│       └── escher_final_candidate_trajectory_15m/   # Experiment 44
 ├── docs/
 │   └── OUTPUT_CONVENTIONS.md
 ├── notebooks/                                        # Original notebook archive
@@ -561,6 +562,18 @@ checkpoint-pair tests.
 **Question:** does lower exploitability over long-horizon ESCHER training
 correspond to statistically consistent improvement in direct head-to-head play?
 
+### 44. ESCHER selected-model 15M-node trajectory export
+
+[`experiments/leduc_poker/escher_final_candidate_trajectory_15m/`](experiments/leduc_poker/escher_final_candidate_trajectory_15m/README.md)
+
+Reruns the selected Experiment 28/43 ESCHER model for approximately 15 million
+nodes across the same five seeds. Unlike Experiment 43's five policy snapshots,
+this runner persists an exact node-zero baseline plus all 131 in-training
+exploitability evaluations per seed. It also reports exploitability by training
+time, the node-weighted 14M--15M final-window mean, and normalized
+exploitability AUC over 0--15M nodes. These files are intended as the ESCHER
+input to the four-algorithm comparison.
+
 ## Setup
 
 Create and activate a Python 3.9 virtual environment. The repository contains
@@ -709,6 +722,9 @@ python -m experiments.leduc_poker.escher_long_horizon_candidate_ablation.run
 
 # Experiment 43 — approximately 15M-node temporal checkpoint head-to-head
 python -m experiments.leduc_poker.escher_final_candidate_checkpoint_head_to_head.run
+
+# Experiment 44 — dense approximately 15M-node selected ESCHER trajectory
+python -m experiments.leduc_poker.escher_final_candidate_trajectory_15m.run
 ```
 
 For quick GCP smoke tests, first make sure the environment variables required
@@ -1313,6 +1329,28 @@ inspect a job without submitting it; `BATCH_MAX_RETRY_COUNT` and
     --batch-size-average-policy 2 \
     --memory-capacity 128 \
     --output-root outputs/cloud/escher-smoke-exp43" \
+  "n2-standard-4" "3600" "4000" "16000" "100"
+
+# Experiment 44 smoke test — dense trajectory, runtime, final-window mean and 0-15M AUC
+./gcp/submit_batch_experiment.sh \
+  "escher-smoke-exp44-$(date +%Y%m%d-%H%M%S)" \
+  "/usr/bin/time -v python -m experiments.leduc_poker.escher_final_candidate_trajectory_15m.run \
+    --seeds 1234 \
+    --iterations 2 \
+    --evaluation-interval 1 \
+    --traversals 2 \
+    --value-traversals 2 \
+    --policy-network-train-steps 1 \
+    --regret-network-train-steps 1 \
+    --value-network-train-steps 1 \
+    --policy-network-layers 8,8 \
+    --regret-network-layers 8,8 \
+    --value-network-layers 8,8 \
+    --batch-size-regret 2 \
+    --batch-size-value 2 \
+    --batch-size-average-policy 2 \
+    --memory-capacity 128 \
+    --output-root outputs/cloud/escher-smoke-exp44" \
   "n2-standard-4" "3600" "4000" "16000" "100"
 ```
 
