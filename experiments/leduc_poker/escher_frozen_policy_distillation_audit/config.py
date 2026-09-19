@@ -13,6 +13,8 @@ from experiments.leduc_poker.escher_final_candidate_trajectory_15m.config import
 EXPERIMENT_ID = 45
 EXPERIMENT_NAME = "leduc_poker_escher_frozen_policy_distillation_audit"
 DEFAULT_SEEDS = [1234, 2025, 31415]
+TRAINING_WALL_CLOCK_SECONDS = 12 * 60 * 60
+SAFETY_MAX_ITERATIONS = 100_000
 
 ROW_MSE = "row_mse_current_budget"
 ROW_CE = "row_soft_target_ce_matched_examples"
@@ -49,13 +51,14 @@ ARMS = {
 DEFAULT_CONFIG = deepcopy(EXPERIMENT_44_CONFIG)
 DEFAULT_CONFIG.update({
     "experiment_name": EXPERIMENT_NAME,
-    # Experiment 44 reached about 15M nodes in 11.2--11.6 hours per seed on
-    # n2-standard-8. Preserve that algorithmic budget rather than stopping in
-    # the middle of an ESCHER iteration at an imprecise wall-clock boundary.
-    "num_iterations": 1_300,
-    "expected_final_nodes_touched": 15_000_000,
-    # Preserve Experiment 44's evaluation/fitting cadence so the source run is
-    # directly comparable and remains an approximately 12-hour training run.
+    # Time, rather than iterations or touched nodes, defines the endpoint. The
+    # solver completes an in-flight iteration after the boundary; this large
+    # iteration cap is only a guard against an unavailable monotonic clock.
+    "training_wall_clock_seconds": TRAINING_WALL_CLOCK_SECONDS,
+    "num_iterations": SAFETY_MAX_ITERATIONS,
+    "expected_final_nodes_touched": None,
+    # Preserve Experiment 44's evaluation/fitting cadence while allowing every
+    # seed to reach as many completed iterations/nodes as 12 hours permits.
     "check_exploitability_every": 10,
     "memory_capacity": 50_000,
     "average_policy_memory_capacity": 1_000_000,
@@ -79,6 +82,16 @@ def validate_config(config: Mapping[str, object], *, smoke: bool = False) -> Non
         raise ValueError("Regret and value memory_capacity must remain 50,000")
     if not smoke and tuple(config["policy_network_layers"]) != (256, 256, 128):
         raise ValueError("The audit fixes the policy network at 256x256x128")
+    if (
+        not smoke
+        and float(config["training_wall_clock_seconds"])
+        != float(TRAINING_WALL_CLOCK_SECONDS)
+    ):
+        raise ValueError("Experiment 45 requires exactly 12 active training hours")
+    if float(config["training_wall_clock_seconds"]) <= 0.0:
+        raise ValueError("training_wall_clock_seconds must be positive")
+    if not smoke and config.get("expected_final_nodes_touched") is not None:
+        raise ValueError("Experiment 45 has no fixed touched-node endpoint")
     if int(config["num_iterations"]) <= 0:
         raise ValueError("num_iterations must be positive")
     if int(config["policy_network_train_steps"]) <= 0:
@@ -101,5 +114,7 @@ __all__ = [
     "GROUPED_CE_4X",
     "ROW_CE",
     "ROW_MSE",
+    "SAFETY_MAX_ITERATIONS",
+    "TRAINING_WALL_CLOCK_SECONDS",
     "validate_config",
 ]

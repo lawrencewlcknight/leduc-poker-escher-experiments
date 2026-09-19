@@ -147,7 +147,8 @@ def build_config(args) -> dict:
         for key, value in smoke_defaults.items():
             if key not in explicitly_set:
                 config[key] = value
-    config["expected_final_nodes_touched"] = None if args.smoke else 15_000_000
+    config["expected_final_nodes_touched"] = None
+    config["smoke"] = bool(args.smoke)
     validate_config(config, smoke=args.smoke)
     return config
 
@@ -173,10 +174,27 @@ def _run_seed(seed: int, config: dict, run_dir: Path) -> tuple[dict, list[dict]]
     game = pyspiel.load_game(str(config["game_name"]))
     solver = make_escher_solver(game, config, run_seed=seed)
 
-    _LOGGER.info("Training source seed %s to iteration %s", seed, config["num_iterations"])
+    _LOGGER.info(
+        "Training source seed %s for %.2f active hours (iteration safety cap %s)",
+        seed,
+        float(config["training_wall_clock_seconds"]) / 3_600.0,
+        config["num_iterations"],
+    )
     training_started = time.perf_counter()
-    _, _, convs, nodes, values, diagnostics = solver.solve()
+    _, _, convs, nodes, values, diagnostics = solver.solve(
+        max_wall_clock_seconds=float(config["training_wall_clock_seconds"])
+    )
     training_seconds = time.perf_counter() - training_started
+    solve_summary = solver.get_last_solve_summary()
+    if solve_summary is None:
+        raise RuntimeError("ESCHER solver did not publish termination metadata")
+    if not bool(config.get("smoke", False)) and not solve_summary[
+        "hit_wall_clock_limit"
+    ]:
+        raise RuntimeError(
+            f"Experiment {EXPERIMENT_ID} reached its iteration safety cap "
+            "before the configured training-time endpoint"
+        )
     source_metrics = exact_neural_policy_metrics(game, solver._policy_network)  # pylint: disable=protected-access
     source_final_iteration = int(solver._iteration)  # pylint: disable=protected-access
     serialized = list(solver.get_average_policy_memories())
@@ -201,8 +219,25 @@ def _run_seed(seed: int, config: dict, run_dir: Path) -> tuple[dict, list[dict]]
     source_row = {
         "seed": int(seed),
         "source_training_seconds": float(training_seconds),
+        "source_active_training_seconds": float(
+            solve_summary["active_training_seconds"]
+        ),
+        "source_training_budget_seconds": float(
+            config["training_wall_clock_seconds"]
+        ),
+        "source_training_budget_overshoot_seconds": float(
+            solve_summary["budget_overshoot_seconds"]
+        ),
+        "source_termination_reason": solve_summary["termination_reason"],
+        "source_hit_wall_clock_limit": bool(
+            solve_summary["hit_wall_clock_limit"]
+        ),
+        "source_completed_solve_passes": int(
+            solve_summary["completed_solve_passes"]
+        ),
         "source_final_iteration": source_final_iteration,
-        "source_final_nodes_touched": float(nodes[-1]),
+        "source_final_nodes_touched": int(solve_summary["nodes_touched"]),
+        "source_last_checkpoint_nodes_touched": float(nodes[-1]),
         "source_final_recorded_nash_conv": float(convs[-1]),
         "source_final_recorded_exploitability": float(convs[-1]) / 2.0,
         "source_final_recorded_policy_value": float(values[-1]),
@@ -458,7 +493,7 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
         result["failures"] = failures
         _write_json(run_dir / "aggregate_summary.json", result)
         return 2
-    _LOGGER.info("Experiment 45 complete: %s", run_dir.resolve())
+    _LOGGER.info("Experiment %s complete: %s", EXPERIMENT_ID, run_dir.resolve())
     return 0
 
 

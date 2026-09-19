@@ -574,6 +574,25 @@ time, the node-weighted 14M--15M final-window mean, and normalized
 exploitability AUC over 0--15M nodes. These files are intended as the ESCHER
 input to the four-algorithm comparison.
 
+### 45. Standard-ESCHER frozen-reservoir distillation audit
+
+[`experiments/leduc_poker/escher_frozen_policy_distillation_audit/`](experiments/leduc_poker/escher_frozen_policy_distillation_audit/README.md)
+
+Trains three standard-ESCHER seeds for 12 active hours with a one-million-row
+average-policy reservoir. It then evaluates the empirical reservoir policy and
+fits four neural-policy treatments from each identical frozen reservoir to
+separate regret-learning quality from average-policy distillation error.
+
+### 46. Paper-hyperparameter ESCHER distillation audit
+
+[`experiments/leduc_poker/escher_paper_hyperparameter_distillation_audit/`](experiments/leduc_poker/escher_paper_hyperparameter_distillation_audit/README.md)
+
+Repeats Experiment 45 while changing only the seven traversal, minibatch and
+training-step settings reported for the ESCHER paper's principal deep
+experiments. The 12-hour endpoint makes completed iterations and touched nodes
+outcomes, exposing whether the paper-scale optimisation budget improves policy
+quality enough to justify its much lower iteration throughput.
+
 ## Setup
 
 Create and activate a Python 3.9 virtual environment. The repository contains
@@ -728,6 +747,9 @@ python -m experiments.leduc_poker.escher_final_candidate_trajectory_15m.run
 
 # Experiment 45 — frozen-reservoir standard-ESCHER policy-distillation audit
 python -m experiments.leduc_poker.escher_frozen_policy_distillation_audit.run
+
+# Experiment 46 — ESCHER paper-hyperparameter distillation audit
+python -m experiments.leduc_poker.escher_paper_hyperparameter_distillation_audit.run
 ```
 
 ### Experiment 45 cloud run: parallel seed VMs
@@ -736,7 +758,9 @@ Experiment 45 follows the remote-controller structure used by Experiment 35
 in the ESCHER-architecture repository. Its cloud smoke, production training,
 and aggregation stages are ordered automatically. Production is a three-task
 array with `parallelism=3` and `taskCountPerNode=1`, so seeds `1234`, `2025`,
-and `31415` run concurrently on three separate `n2-standard-8` VMs.
+and `31415` run concurrently on three separate `n2-standard-8` VMs. Each source
+run trains for 12 active hours; its final touched-node and iteration counts are
+measured outcomes rather than predefined endpoints.
 
 ```bash
 ./gcp/run_escher_frozen_policy_distillation_audit.sh smoke-local
@@ -755,6 +779,30 @@ existing Batch experiments. Monitor or resume with:
 ```bash
 ./gcp/run_escher_frozen_policy_distillation_audit.sh status
 ./gcp/run_escher_frozen_policy_distillation_audit.sh resume
+```
+
+### Experiment 46 cloud run: paper hyperparameters
+
+Experiment 46 retains Experiment 45's three seeds, 12-hour source-training
+endpoint, one-million-row policy reservoir and four-arm frozen distillation
+audit. It changes only the paper-reported traversal, minibatch and network-step
+parameters. Its three seeds run concurrently on separate `n2-standard-8` VMs.
+
+```bash
+./gcp/run_escher_paper_hyperparameter_distillation_audit.sh smoke-local
+
+export REPO_REF="$(git rev-parse HEAD)"
+export RUN_ID="exp46-paper-$(date -u '+%Y%m%d-%H%M%S')"
+export PARALLELISM=3
+
+./gcp/run_escher_paper_hyperparameter_distillation_audit.sh run
+```
+
+The controller is cloud-owned. Monitor or resume with:
+
+```bash
+./gcp/run_escher_paper_hyperparameter_distillation_audit.sh status
+./gcp/run_escher_paper_hyperparameter_distillation_audit.sh resume
 ```
 
 For quick GCP smoke tests, first make sure the environment variables required
@@ -1385,6 +1433,9 @@ inspect a job without submitting it; `BATCH_MAX_RETRY_COUNT` and
 
 # Experiment 45 local smoke test — also exercises worker/aggregate orchestration
 ./gcp/run_escher_frozen_policy_distillation_audit.sh smoke-local
+
+# Experiment 46 local smoke test — paper-hyperparameter contract and orchestration
+./gcp/run_escher_paper_hyperparameter_distillation_audit.sh smoke-local
 ```
 
 Outputs are written to a timestamped subdirectory under `outputs/` by default. The key files are:

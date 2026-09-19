@@ -102,7 +102,7 @@ def run_worker(
     exit_code = run_experiment(arguments)
     if exit_code != 0:
         raise RuntimeError(
-            f"Experiment 45 worker {name} exited with status {exit_code}"
+            f"Experiment {EXPERIMENT_ID} worker {name} exited with status {exit_code}"
         )
 
     candidates = sorted(
@@ -111,13 +111,17 @@ def run_worker(
         reverse=True,
     )
     if not candidates:
-        raise RuntimeError(f"Experiment 45 worker {name} produced no run directory")
+        raise RuntimeError(
+            f"Experiment {EXPERIMENT_ID} worker {name} produced no run directory"
+        )
     run_dir = candidates[0]
     seed_dir = run_dir / f"seed_{seed}"
     source_summary = seed_dir / "source_summary.json"
     fit_metrics = seed_dir / "fit_metrics.csv"
     if not (seed_dir / "SUCCESS.json").is_file():
-        raise RuntimeError(f"Experiment 45 worker {name} has no success marker")
+        raise RuntimeError(
+            f"Experiment {EXPERIMENT_ID} worker {name} has no success marker"
+        )
     fit_rows = _read_csv(fit_metrics)
     source = _read_json(source_summary)
     reservoir = run_dir / str(source["reservoir_path"])
@@ -128,7 +132,9 @@ def run_worker(
         or not reservoir.is_file()
         or sha256(reservoir) != source.get("reservoir_sha256")
     ):
-        raise RuntimeError(f"Experiment 45 worker {name} has incomplete outputs")
+        raise RuntimeError(
+            f"Experiment {EXPERIMENT_ID} worker {name} has incomplete outputs"
+        )
 
     result = {
         "status": "complete",
@@ -161,7 +167,9 @@ def aggregate_workers(
         result = _read_json(result_path)
         seed = int(result.get("seed", -1))
         if seed in found:
-            raise ValueError(f"Duplicate Experiment 45 worker for seed {seed}")
+            raise ValueError(
+                f"Duplicate Experiment {EXPERIMENT_ID} worker for seed {seed}"
+            )
         if (
             result.get("status") != "complete"
             or int(result.get("experiment_id", -1)) != EXPERIMENT_ID
@@ -171,7 +179,8 @@ def aggregate_workers(
         found[seed] = (result_path, result)
     if set(found) != expected:
         raise ValueError(
-            f"Experiment 45 workers differ; missing={sorted(expected-set(found))}, "
+            f"Experiment {EXPERIMENT_ID} workers differ; "
+            f"missing={sorted(expected-set(found))}, "
             f"extra={sorted(set(found)-expected)}"
         )
     commits = {str(result["repository_commit"]) for _, result in found.values()}

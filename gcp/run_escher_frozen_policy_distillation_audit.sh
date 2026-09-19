@@ -4,15 +4,20 @@ set -Eeuo pipefail
 ACTION="${1:-run}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-BUILDER="$SCRIPT_DIR/escher_frozen_policy_distillation_audit_batch.py"
+EXPERIMENT_NUMBER="${EXPERIMENT_NUMBER:-45}"
+EXPERIMENT_RUN_PREFIX="${EXPERIMENT_RUN_PREFIX:-exp45-dist}"
+EXPERIMENT_DRY_RUN_PREFIX="${EXPERIMENT_DRY_RUN_PREFIX:-exp45}"
+EXPERIMENT_REMOTE_CONTROLLER_VAR="${EXPERIMENT_REMOTE_CONTROLLER_VAR:-EXP45_REMOTE_CONTROLLER}"
+EXPERIMENT_SMOKE_MODULE="${EXPERIMENT_SMOKE_MODULE:-experiments.leduc_poker.escher_frozen_policy_distillation_audit.cloud}"
+BUILDER="${EXPERIMENT_BATCH_BUILDER:-$SCRIPT_DIR/escher_frozen_policy_distillation_audit_batch.py}"
 
 if [[ "$ACTION" == "smoke-local" ]]; then
-  SMOKE_OUTPUT="${SMOKE_OUTPUT:-/tmp/escher-frozen-policy-distillation-smoke}"
-  export MPLCONFIGDIR="${MPLCONFIGDIR:-/tmp/exp45-matplotlib}"
-  export XDG_CACHE_HOME="${XDG_CACHE_HOME:-/tmp/exp45-cache}"
+  SMOKE_OUTPUT="${SMOKE_OUTPUT:-/tmp/exp${EXPERIMENT_NUMBER}-distillation-smoke}"
+  export MPLCONFIGDIR="${MPLCONFIGDIR:-/tmp/exp${EXPERIMENT_NUMBER}-matplotlib}"
+  export XDG_CACHE_HOME="${XDG_CACHE_HOME:-/tmp/exp${EXPERIMENT_NUMBER}-cache}"
   mkdir -p "$MPLCONFIGDIR" "$XDG_CACHE_HOME"
   cd "$REPO_DIR"
-  exec python3 -m experiments.leduc_poker.escher_frozen_policy_distillation_audit.cloud \
+  exec python3 -m "$EXPERIMENT_SMOKE_MODULE" \
     smoke --output-root "$SMOKE_OUTPUT" --no-resume
 fi
 
@@ -20,9 +25,9 @@ fi
 : "${REGION:?Set REGION}"
 : "${BUCKET:?Set BUCKET}"
 : "${SA_EMAIL:?Set SA_EMAIL}"
-: "${REPO_REF:?Set REPO_REF to the pushed Experiment 45 commit SHA}"
+: "${REPO_REF:?Set REPO_REF to the pushed Experiment ${EXPERIMENT_NUMBER} commit SHA}"
 
-RUN_ID="${RUN_ID:-exp45-dist-$(date -u '+%Y%m%d-%H%M%S')}"
+RUN_ID="${RUN_ID:-${EXPERIMENT_RUN_PREFIX}-$(date -u '+%Y%m%d-%H%M%S')}"
 if [[ ${#RUN_ID} -gt 30 || ! "$RUN_ID" =~ ^[a-z][a-z0-9-]*[a-z0-9]$ ]]; then
   echo "RUN_ID must be 2-30 lowercase letters, digits or hyphens" >&2
   exit 2
@@ -51,7 +56,7 @@ elif [[ "$ACTION" == "orchestrate-resume" ]]; then
   CONTROLLER_ACTION="orchestrate-resume"
 fi
 
-TEMP_DIR="$(mktemp -d /tmp/exp45-batch.XXXXXX)"
+TEMP_DIR="$(mktemp -d "/tmp/exp${EXPERIMENT_NUMBER}-batch.XXXXXX")"
 trap 'rm -rf "$TEMP_DIR"' EXIT
 
 build_json() {
@@ -102,10 +107,10 @@ build_json aggregate "$TEMP_DIR/aggregate.json"
 
 case "$ACTION" in
   dry-run)
-    cp "$TEMP_DIR/controller.json" "$REPO_DIR/exp45_controller_job.json"
-    cp "$TEMP_DIR/smoke.json" "$REPO_DIR/exp45_smoke_job.json"
-    cp "$TEMP_DIR/train.json" "$REPO_DIR/exp45_train_job.json"
-    cp "$TEMP_DIR/aggregate.json" "$REPO_DIR/exp45_aggregate_job.json"
+    cp "$TEMP_DIR/controller.json" "$REPO_DIR/${EXPERIMENT_DRY_RUN_PREFIX}_controller_job.json"
+    cp "$TEMP_DIR/smoke.json" "$REPO_DIR/${EXPERIMENT_DRY_RUN_PREFIX}_smoke_job.json"
+    cp "$TEMP_DIR/train.json" "$REPO_DIR/${EXPERIMENT_DRY_RUN_PREFIX}_train_job.json"
+    cp "$TEMP_DIR/aggregate.json" "$REPO_DIR/${EXPERIMENT_DRY_RUN_PREFIX}_aggregate_job.json"
     ;;
   status)
     gcloud batch jobs list --project "$PROJECT_ID" --location "$REGION" \
@@ -117,11 +122,11 @@ case "$ACTION" in
     ;;
   run|resume)
     submit_job "$CONTROLLER_JOB" "$TEMP_DIR/controller.json"
-    echo "Remote Experiment 45 controller submitted: $CONTROLLER_JOB"
+    echo "Remote Experiment ${EXPERIMENT_NUMBER} controller submitted: $CONTROLLER_JOB"
     echo "The laptop may now be disconnected or switched off."
     ;;
   orchestrate)
-    [[ "${EXP45_REMOTE_CONTROLLER:-}" == "1" ]] || { echo "Internal action" >&2; exit 2; }
+    [[ "${!EXPERIMENT_REMOTE_CONTROLLER_VAR:-}" == "1" ]] || { echo "Internal action" >&2; exit 2; }
     ensure_job_succeeds "$SMOKE_JOB" "$TEMP_DIR/smoke.json" || {
       echo "Cloud smoke failed; production was not submitted." >&2; exit 1;
     }
@@ -129,7 +134,7 @@ case "$ACTION" in
     ensure_job_succeeds "$AGGREGATE_JOB" "$TEMP_DIR/aggregate.json"
     ;;
   orchestrate-resume)
-    [[ "${EXP45_REMOTE_CONTROLLER:-}" == "1" ]] || { echo "Internal action" >&2; exit 2; }
+    [[ "${!EXPERIMENT_REMOTE_CONTROLLER_VAR:-}" == "1" ]] || { echo "Internal action" >&2; exit 2; }
     complete_or_retry "${RUN_ID}-smoke" "$SMOKE_JOB" "$TEMP_DIR/smoke.json"
     complete_or_retry "${RUN_ID}-train" "$TRAIN_JOB" "$TEMP_DIR/train.json"
     complete_or_retry "${RUN_ID}-aggregate" "$AGGREGATE_JOB" "$TEMP_DIR/aggregate.json"

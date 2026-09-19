@@ -14,6 +14,8 @@ from experiments.leduc_poker.escher_frozen_policy_distillation_audit.config impo
     ARM_ORDER,
     DEFAULT_CONFIG,
     DEFAULT_SEEDS,
+    SAFETY_MAX_ITERATIONS,
+    TRAINING_WALL_CLOCK_SECONDS,
 )
 from experiments.leduc_poker.escher_frozen_policy_distillation_audit.cloud import (
     task_name,
@@ -30,7 +32,10 @@ from experiments.leduc_poker.escher_frozen_policy_distillation_audit.run import 
 
 def test_experiment_45_preserves_core_memories_and_enlarges_only_policy():
     assert DEFAULT_SEEDS == [1234, 2025, 31415]
-    assert DEFAULT_CONFIG["num_iterations"] == 1_300
+    assert DEFAULT_CONFIG["num_iterations"] == SAFETY_MAX_ITERATIONS
+    assert DEFAULT_CONFIG["training_wall_clock_seconds"] == 12 * 60 * 60
+    assert TRAINING_WALL_CLOCK_SECONDS == 12 * 60 * 60
+    assert DEFAULT_CONFIG["expected_final_nodes_touched"] is None
     assert DEFAULT_CONFIG["check_exploitability_every"] == 10
     assert DEFAULT_CONFIG["memory_capacity"] == 50_000
     assert DEFAULT_CONFIG["average_policy_memory_capacity"] == 1_000_000
@@ -101,6 +106,37 @@ def test_solver_uses_independent_policy_and_core_memory_capacities():
     assert solver._regret_memories[1]._reservoir_buffer_capacity == 7
     assert solver._value_memory._reservoir_buffer_capacity == 7
     assert solver._value_memory_test._reservoir_buffer_capacity == 7
+
+
+def test_solver_wall_clock_budget_stops_at_a_completed_iteration():
+    args = Namespace(
+        iterations=100,
+        traversals=None,
+        value_traversals=None,
+        evaluation_interval=None,
+        memory_capacity=None,
+        average_policy_memory_capacity=None,
+        policy_network_train_steps=None,
+        regret_network_train_steps=None,
+        value_network_train_steps=None,
+        batch_size_regret=None,
+        batch_size_value=None,
+        batch_size_average_policy=None,
+        policy_network_layers=None,
+        regret_network_layers=None,
+        value_network_layers=None,
+        reservoir_decode_chunk_size=None,
+        smoke=True,
+    )
+    config = build_config(args)
+    solver = make_escher_solver(pyspiel.load_game("leduc_poker"), config)
+    solver.solve(max_wall_clock_seconds=1e-9)
+    summary = solver.get_last_solve_summary()
+    assert summary["termination_reason"] == "wall_clock_limit"
+    assert summary["hit_wall_clock_limit"] is True
+    assert summary["completed_solve_passes"] == 1
+    assert summary["active_training_seconds"] >= 1e-9
+    assert summary["nodes_touched"] == solver.get_num_nodes()
 
 
 def test_cloud_task_schedule_is_one_task_per_production_seed():

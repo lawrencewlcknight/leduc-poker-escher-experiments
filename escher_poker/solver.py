@@ -392,6 +392,7 @@ class ESCHERSolver(policy.Policy):
         self._importance_sampling_threshold = importance_sampling_threshold
         self._clear_value_buffer = clear_value_buffer
         self._nodes_visited = 0
+        self._last_solve_summary = None
         self._cumulative_regret_traversal_seconds = 0.0
         self._cumulative_value_traversal_seconds = 0.0
         self._example_info_state = [None, None]
@@ -990,6 +991,12 @@ class ESCHERSolver(policy.Policy):
     def get_num_nodes(self):
         return self._nodes_visited
 
+    def get_last_solve_summary(self):
+        """Return termination metadata for the most recent ``solve`` call."""
+        if self._last_solve_summary is None:
+            return None
+        return dict(self._last_solve_summary)
+
     def get_squared_errors(self):
         return self._squared_errors
 
@@ -1162,7 +1169,12 @@ class ESCHERSolver(policy.Policy):
         print(sum(squared_errors) / len(squared_errors), "Mean Squared Errors")
         print(sum(squared_errors_child) / len(squared_errors_child), "Mean Squared Errors Child")
 
-    def solve(self, save_path_convs=None, post_evaluation_callback=None):
+    def solve(
+        self,
+        save_path_convs=None,
+        post_evaluation_callback=None,
+        max_wall_clock_seconds=None,
+    ):
         """Run ESCHER training and collect thesis-style diagnostics.
 
         Args:
@@ -1176,6 +1188,10 @@ class ESCHERSolver(policy.Policy):
             while ``self._iteration`` records the completed solve-pass count.
             This permits lightweight policy snapshots without stopping or
             restarting training.
+          max_wall_clock_seconds: Optional active-training budget. The solver
+            does not start another iteration once this many seconds have
+            elapsed. Any iteration already in progress is completed, so the
+            realised duration may exceed the target by at most one iteration.
 
         Returns:
           regret_losses: dict[player -> list[float]]
@@ -1196,6 +1212,16 @@ class ESCHERSolver(policy.Policy):
                 except Exception:
                     return np.nan
 
+        if max_wall_clock_seconds is not None:
+            max_wall_clock_seconds = float(max_wall_clock_seconds)
+            if (
+                not np.isfinite(max_wall_clock_seconds)
+                or max_wall_clock_seconds <= 0.0
+            ):
+                raise ValueError(
+                    "max_wall_clock_seconds must be positive and finite"
+                )
+
         regret_losses = collections.defaultdict(list)
         value_losses = []
         convs = []
@@ -1207,6 +1233,9 @@ class ESCHERSolver(policy.Policy):
         last_value_loss = np.nan
         last_value_test_loss = np.nan
         solve_start_time = time.time()
+        solve_start_monotonic = time.perf_counter()
+        completed_solve_passes = 0
+        termination_reason = "iteration_limit"
         timestr = "{:%Y_%m_%d_%H_%M_%S}".format(datetime.now())
 
         if self._use_balanced_probs:
@@ -1226,6 +1255,14 @@ class ESCHERSolver(policy.Policy):
                 self.traverse_game_tree_n_times(1, 0, track_mean_squares=False)
 
                 for i in range(self._num_iterations + 1):
+                    active_elapsed = time.perf_counter() - solve_start_monotonic
+                    if (
+                        i > 0
+                        and max_wall_clock_seconds is not None
+                        and active_elapsed >= max_wall_clock_seconds
+                    ):
+                        termination_reason = "wall_clock_limit"
+                        break
                     current_lr = self._set_learning_rate_for_iteration(i)
                     self._reset_regret_target_consistency_diagnostics()
                     if self._verbose:
@@ -1349,6 +1386,7 @@ class ESCHERSolver(policy.Policy):
 
                     # Evaluate the learned average policy at fixed checkpoints.
                     self._iteration += 1
+                    completed_solve_passes += 1
                     if self._compute_exploitability and i % self._check_exploitability_every == 0:
                         if self._save_average_policy_memories:
                             self._close_average_policy_memory_writer()
@@ -1480,9 +1518,28 @@ class ESCHERSolver(policy.Policy):
                         if post_evaluation_callback is not None:
                             post_evaluation_callback(self, int(i))
 
+        active_training_seconds = time.perf_counter() - solve_start_monotonic
+
         # Train the final policy network so the returned solver is immediately playable.
         self._reinitialize_policy_network()
         policy_loss = self._learn_average_policy_network()
+        self._last_solve_summary = {
+            "termination_reason": termination_reason,
+            "hit_wall_clock_limit": termination_reason == "wall_clock_limit",
+            "wall_clock_budget_seconds": max_wall_clock_seconds,
+            "active_training_seconds": float(active_training_seconds),
+            "budget_overshoot_seconds": (
+                None
+                if max_wall_clock_seconds is None
+                else float(max(0.0, active_training_seconds - max_wall_clock_seconds))
+            ),
+            "completed_solve_passes": int(completed_solve_passes),
+            "solver_iteration": int(self._iteration),
+            "nodes_touched": int(self.get_num_nodes()),
+            "total_solve_seconds_including_final_policy_fit": float(
+                time.perf_counter() - solve_start_monotonic
+            ),
+        }
         return regret_losses, policy_loss, convs, nodes, average_policy_values, diagnostics
 
     def save_policy_network(self, outputfolder):

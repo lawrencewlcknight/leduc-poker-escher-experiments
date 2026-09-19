@@ -7,12 +7,14 @@ substantially caused by average-policy approximation rather than by the
 underlying regret learner.
 
 Three development seeds (`1234`, `2025`, and `31415`) use the selected standard
-ESCHER architecture and the Experiment 44 training budget: 1,300 configured
-iterations, approximately 15 million touched nodes and approximately 12 hours
-per seed on `n2-standard-8`. The ten-iteration evaluation and policy-fitting
-cadence is also retained. The regret and transient value memories remain at
-50,000 rows. Only the lifetime average-policy reservoir is enlarged to
-1,000,000 rows.
+ESCHER architecture and each receives exactly 12 active training hours on an
+`n2-standard-8`. Touched nodes and completed iterations are outcomes rather
+than stopping criteria. The solver checks the monotonic deadline between
+iterations and completes an iteration already in flight, so a run can exceed
+12 hours by at most one iteration. The ten-iteration evaluation and
+policy-fitting cadence is retained. The regret and transient value memories
+remain at 50,000 rows. Only the lifetime average-policy reservoir is enlarged
+to 1,000,000 rows.
 
 After each source run, the final reservoir is frozen to a compressed NPZ file,
 checksummed, reloaded, grouped by information set, and evaluated exactly. Four
@@ -51,10 +53,10 @@ four arms, performs exact Leduc evaluations, and writes both charts.
 python -m experiments.leduc_poker.escher_frozen_policy_distillation_audit.run
 ```
 
-The three seeds run sequentially. Expect approximately 39--48 elapsed hours on
-hardware comparable to `n2-standard-8`, including offline fitting. Results are
-rewritten after every completed seed so a later failure does not erase earlier
-evidence.
+The three seeds run sequentially locally. Expect approximately 39--48 elapsed
+hours on hardware comparable to `n2-standard-8`: 36 active training hours plus
+final policy fitting and the frozen-reservoir arms. Results are rewritten after
+every completed seed so a later failure does not erase earlier evidence.
 
 ## GCP Batch
 
@@ -104,7 +106,7 @@ later-stage failure does not require successful earlier seeds to be rerun.
 | Output | Contents |
 | --- | --- |
 | `seed_<seed>/frozen_average_policy_reservoir.npz` | Lossless frozen final reservoir used by every arm. |
-| `source_seed_metrics.csv` | Source training, reservoir, empirical-policy and archived neural-policy diagnostics. |
+| `source_seed_metrics.csv` | Source training budget, realised time/overshoot, iterations, nodes, reservoir, empirical-policy and archived neural-policy diagnostics. |
 | `fit_metrics.csv` | Exact exploitability, empirical gap, fitting work and runtime for every arm and seed. |
 | `arm_summary.csv` | Cross-seed means, standard deviations and standard errors. |
 | `exploitability_by_distillation_arm.png` | Exact arm comparison with the empirical-reservoir reference. |
