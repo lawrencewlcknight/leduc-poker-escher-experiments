@@ -54,6 +54,11 @@ def make_escher_solver(
         batch_size_value=int(config["batch_size_value"]),
         batch_size_average_policy=int(config["batch_size_average_policy"]),
         memory_capacity=int(config["memory_capacity"]),
+        average_policy_memory_capacity=(
+            None
+            if config.get("average_policy_memory_capacity") is None
+            else int(config["average_policy_memory_capacity"])
+        ),
         regret_replay_mode=str(config.get("regret_replay_mode", "reservoir")),
         regret_replay_rare_history_quota=int(
             config.get("regret_replay_rare_history_quota", 64)

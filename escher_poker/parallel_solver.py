@@ -201,9 +201,18 @@ class ParallelESCHERSolver(ESCHERSolver):
             )
 
         total_memory_capacity = int(solver_kwargs["memory_capacity"])
+        total_average_policy_memory_capacity = int(
+            solver_kwargs.get("average_policy_memory_capacity")
+            or total_memory_capacity
+        )
         if total_memory_capacity < self._parallel_num_workers:
             raise ValueError(
                 "memory_capacity must provide at least one slot per parallel worker."
+            )
+        if total_average_policy_memory_capacity < self._parallel_num_workers:
+            raise ValueError(
+                "average_policy_memory_capacity must provide at least one slot "
+                "per parallel worker."
             )
         super().__init__(game, **solver_kwargs)
         self._game_name = str(game_name)
@@ -234,10 +243,17 @@ class ParallelESCHERSolver(ESCHERSolver):
                 total_memory_capacity,
                 self._parallel_num_workers,
             )
-            for worker_index, capacity in enumerate(capacities):
+            average_policy_capacities = partition_total(
+                total_average_policy_memory_capacity,
+                self._parallel_num_workers,
+            )
+            for worker_index, (capacity, policy_capacity) in enumerate(
+                zip(capacities, average_policy_capacities)
+            ):
                 worker_kwargs = dict(solver_kwargs)
                 worker_kwargs.update({
                     "memory_capacity": int(capacity),
+                    "average_policy_memory_capacity": int(policy_capacity),
                     "compute_exploitability": False,
                     "save_policy_weights": False,
                     "save_regret_networks": None,

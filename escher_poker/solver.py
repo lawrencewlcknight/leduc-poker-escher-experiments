@@ -69,6 +69,7 @@ class ESCHERSolver(policy.Policy):
                  batch_size_value: int = 2024,
                  batch_size_average_policy: int = 10000,
                  memory_capacity: int = int(1e5),
+                 average_policy_memory_capacity: int = None,
                  regret_replay_mode: str = RESERVOIR,
                  regret_replay_rare_history_quota: int = 64,
                  regret_replay_weight_floor: float = 1e-6,
@@ -144,7 +145,11 @@ class ESCHERSolver(policy.Policy):
           learning_rate: Learning rate.
           batch_size_regret: (int) Batch size to sample from regret memories.
           batch_size_average_policy: (int) Batch size to sample from average_policy memories.
-          memory_capacity: Number of samples that can be stored in memory.
+          memory_capacity: Number of samples that can be stored in each regret
+            and value memory. It also remains the backwards-compatible default
+            for the average-policy reservoir.
+          average_policy_memory_capacity: Optional independent capacity for the
+            average-policy reservoir. When omitted, ``memory_capacity`` is used.
           regret_replay_mode: Regret replay backend. Supported values are
             ``"reservoir"``, ``"all_samples"``, ``"infoset_stratified"``,
             ``"rare_history_quota"``, and
@@ -550,7 +555,10 @@ class ESCHERSolver(policy.Policy):
                     tf.keras.optimizers.Adam(learning_rate=self._learning_rate))
                 self._regret_train_step.append(self._get_regret_train_graph(player))
 
-        self._create_memories(memory_capacity)
+        self._create_memories(
+            memory_capacity,
+            average_policy_memory_capacity=average_policy_memory_capacity,
+        )
 
         # Initialize value networks, losses, optimizers
         self._val_network = ValueNetwork(
@@ -754,9 +762,26 @@ class ESCHERSolver(policy.Policy):
         for p in range(self._num_players):
             self._regret_memories[p].clear()
 
-    def _create_memories(self, memory_capacity):
+    def _create_memories(
+        self,
+        memory_capacity,
+        *,
+        average_policy_memory_capacity=None,
+    ):
         """Create memory buffers and associated feature descriptions."""
-        self._average_policy_memories = ReservoirBuffer(memory_capacity)
+        memory_capacity = int(memory_capacity)
+        if memory_capacity <= 0:
+            raise ValueError("memory_capacity must be positive.")
+        if average_policy_memory_capacity is None:
+            average_policy_memory_capacity = memory_capacity
+        average_policy_memory_capacity = int(average_policy_memory_capacity)
+        if average_policy_memory_capacity <= 0:
+            raise ValueError("average_policy_memory_capacity must be positive.")
+        self._memory_capacity = memory_capacity
+        self._average_policy_memory_capacity = average_policy_memory_capacity
+        self._average_policy_memories = ReservoirBuffer(
+            average_policy_memory_capacity
+        )
         self._regret_memories = [
             make_regret_replay_buffer(
                 self._regret_replay_mode,
@@ -2800,6 +2825,10 @@ class ESCHERSolver(policy.Policy):
                 "balanced_sampling_mix": float(self._balanced_sampling_mix),
                 "track_sampling_coverage": bool(self._track_sampling_coverage),
                 "average_policy_weighting": self._average_policy_weighting,
+                "memory_capacity": int(self._memory_capacity),
+                "average_policy_memory_capacity": int(
+                    self._average_policy_memory_capacity
+                ),
             },
         }
         return ckpt

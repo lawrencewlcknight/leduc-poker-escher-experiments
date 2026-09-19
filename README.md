@@ -725,6 +725,9 @@ python -m experiments.leduc_poker.escher_final_candidate_checkpoint_head_to_head
 
 # Experiment 44 — dense approximately 15M-node selected ESCHER trajectory
 python -m experiments.leduc_poker.escher_final_candidate_trajectory_15m.run
+
+# Experiment 45 — frozen-reservoir standard-ESCHER policy-distillation audit
+python -m experiments.leduc_poker.escher_frozen_policy_distillation_audit.run
 ```
 
 For quick GCP smoke tests, first make sure the environment variables required
@@ -1351,6 +1354,14 @@ inspect a job without submitting it; `BATCH_MAX_RETRY_COUNT` and
     --batch-size-average-policy 2 \
     --memory-capacity 128 \
     --output-root outputs/cloud/escher-smoke-exp44" \
+  "n2-standard-4" "3600" "4000" "16000" "100"
+
+# Experiment 45 smoke test — 1M-policy-reservoir frozen distillation audit
+./gcp/submit_batch_experiment.sh \
+  "escher-smoke-exp45-$(date +%Y%m%d-%H%M%S)" \
+  "/usr/bin/time -v python -m experiments.leduc_poker.escher_frozen_policy_distillation_audit.run \
+    --smoke \
+    --output-root outputs/cloud/escher-smoke-exp45" \
   "n2-standard-4" "3600" "4000" "16000" "100"
 ```
 
