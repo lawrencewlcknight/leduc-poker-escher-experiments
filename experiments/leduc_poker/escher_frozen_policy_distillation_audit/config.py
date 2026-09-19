@@ -15,6 +15,7 @@ EXPERIMENT_NAME = "leduc_poker_escher_frozen_policy_distillation_audit"
 DEFAULT_SEEDS = [1234, 2025, 31415]
 TRAINING_WALL_CLOCK_SECONDS = 12 * 60 * 60
 SAFETY_MAX_ITERATIONS = 100_000
+TRAINING_PROGRESS_EVERY = 10
 
 ROW_MSE = "row_mse_current_budget"
 ROW_CE = "row_soft_target_ce_matched_examples"
@@ -57,9 +58,14 @@ DEFAULT_CONFIG.update({
     "training_wall_clock_seconds": TRAINING_WALL_CLOCK_SECONDS,
     "num_iterations": SAFETY_MAX_ITERATIONS,
     "expected_final_nodes_touched": None,
-    # Preserve Experiment 44's evaluation/fitting cadence while allowing every
-    # seed to reach as many completed iterations/nodes as 12 hours permits.
+    # Intermediate average-policy fitting is deliberately disabled.  The full
+    # twelve-hour budget is reserved for regret/value learning; the playable
+    # source policy is fitted once after the timed loop.  Cheap learner-only
+    # telemetry is retained independently at this cadence.
     "check_exploitability_every": 10,
+    "compute_exploitability": False,
+    "training_progress_every": TRAINING_PROGRESS_EVERY,
+    "source_policy_fit_mode": "final_only_after_timed_training",
     "memory_capacity": 50_000,
     "regret_memory_capacity": 50_000,
     "value_memory_capacity": 50_000,
@@ -92,6 +98,15 @@ def validate_common_config(config: Mapping[str, object], *, smoke: bool = False)
         raise ValueError("Experiment 45 requires exactly 12 active training hours")
     if float(config["training_wall_clock_seconds"]) <= 0.0:
         raise ValueError("training_wall_clock_seconds must be positive")
+    if bool(config.get("compute_exploitability", True)):
+        raise ValueError(
+            "Experiments 45--48 reserve the timed budget for source learning; "
+            "intermediate average-policy fitting must remain disabled"
+        )
+    if int(config.get("training_progress_every", 0)) <= 0:
+        raise ValueError("training_progress_every must be positive")
+    if config.get("source_policy_fit_mode") != "final_only_after_timed_training":
+        raise ValueError("The source policy must be fitted only after timed training")
     if not smoke and config.get("expected_final_nodes_touched") is not None:
         raise ValueError("Experiment 45 has no fixed touched-node endpoint")
     if int(config["num_iterations"]) <= 0:
@@ -141,6 +156,7 @@ __all__ = [
     "ROW_CE",
     "ROW_MSE",
     "SAFETY_MAX_ITERATIONS",
+    "TRAINING_PROGRESS_EVERY",
     "TRAINING_WALL_CLOCK_SECONDS",
     "validate_common_config",
     "validate_config",

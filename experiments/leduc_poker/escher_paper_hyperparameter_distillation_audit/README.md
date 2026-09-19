@@ -22,7 +22,9 @@ Everything else is inherited: seeds `1234`, `2025`, and `31415`; the
 1,000,000-row lifetime average-policy reservoir; the four frozen-reservoir
 distillation arms; and the 12-hour active-training endpoint. Consequently,
 iterations and touched nodes are measured outcomes rather than fixed budgets.
-An in-flight iteration is completed after the boundary.
+An in-flight iteration is completed after the boundary. As in the corrected
+Experiment 45 protocol, no average-policy network is fitted during those 12
+hours. The 10,000-step source-policy fit occurs once after timed training.
 
 The paper settings were selected for its deep Phantom Tic-Tac-Toe and Dark Hex
 experiments, while its reported Leduc evaluation was tabular with an oracle
@@ -73,7 +75,7 @@ after submission. Monitor or resume with:
 ```
 
 Each worker has a 48-hour hard ceiling. This is a cost bound rather than a
-runtime prediction: the source trajectory has a 12-hour budget, but final
+runtime prediction: source learning has a 12-hour budget, but final
 policy fitting and the four frozen-reservoir arms are substantially heavier
 than in Experiment 45.
 
@@ -83,6 +85,6 @@ The output schema is identical to Experiment 45. In particular,
 `source_seed_metrics.csv` records the realised time, endpoint overshoot,
 completed iterations and touched nodes, while `fit_metrics.csv` and the two
 charts report exact exploitability and the empirical-reservoir distillation
-gap for every arm. The inherited trajectory export also writes
-`source_trajectory.csv`, `source_trajectory_summary.csv`, and source-policy
-exploitability charts against both training time and nodes touched.
+gap for every arm. The inherited learner-only telemetry writes
+`source_training_progress.csv`, a nodes-by-time chart and temporal loss charts;
+it does not perform intermediate policy fitting or exploitability evaluation.

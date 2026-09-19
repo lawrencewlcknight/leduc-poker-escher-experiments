@@ -583,9 +583,11 @@ input to the four-algorithm comparison.
 [`experiments/leduc_poker/escher_frozen_policy_distillation_audit/`](experiments/leduc_poker/escher_frozen_policy_distillation_audit/README.md)
 
 Trains three standard-ESCHER seeds for 12 active hours with a one-million-row
-average-policy reservoir. It then evaluates the empirical reservoir policy and
-fits four neural-policy treatments from each identical frozen reservoir to
-separate regret-learning quality from average-policy distillation error.
+average-policy reservoir. The full timed budget is reserved for regret/value
+learning: intermediate policy fitting and exploitability evaluation are
+disabled, while cheap time, node, loss and replay diagnostics are retained.
+It then fits the source policy once, evaluates the empirical reservoir policy,
+and fits four neural-policy treatments from each identical frozen reservoir.
 
 ### 46. Paper-hyperparameter ESCHER distillation audit
 
@@ -787,7 +789,9 @@ and aggregation stages are ordered automatically. Production is a three-task
 array with `parallelism=3` and `taskCountPerNode=1`, so seeds `1234`, `2025`,
 and `31415` run concurrently on three separate `n2-standard-8` VMs. Each source
 run trains for 12 active hours; its final touched-node and iteration counts are
-measured outcomes rather than predefined endpoints.
+measured outcomes rather than predefined endpoints. No average-policy network
+is fitted inside that timed loop; endpoint fitting and exact evaluation occur
+after the boundary.
 
 ```bash
 ./gcp/run_escher_frozen_policy_distillation_audit.sh smoke-local
@@ -807,6 +811,11 @@ existing Batch experiments. Monitor or resume with:
 ./gcp/run_escher_frozen_policy_distillation_audit.sh status
 ./gcp/run_escher_frozen_policy_distillation_audit.sh resume
 ```
+
+The launcher verifies that `SA_EMAIL` has `roles/batch.jobsEditor` on the
+project and can act as itself through `roles/iam.serviceAccountUser`. If a
+binding is absent, submission stops immediately and prints the exact one-time
+IAM commands instead of leaving a controller polling indefinitely.
 
 ### Experiment 46 cloud run: paper hyperparameters
 
@@ -857,29 +866,17 @@ Monitor with the corresponding script's `status` action and resume with its
 `resume` action. The three seeds run concurrently on separate `n2-standard-8`
 VMs; each task retains the Experiment 45 24-hour hard ceiling.
 
-### Combined temporal comparison for Experiments 45--49
+### Temporal reporting for Experiments 45--48
 
-Experiments 45--48 persist the same canonical `analysis/source_trajectory.csv`
-schema. Any future Experiment 49 derived from this runner will inherit it. Once
-the analysis folders are downloaded, generate combined time- and node-based
-charts with:
-
-```bash
-python -m experiments.leduc_poker.escher_frozen_policy_distillation_audit.compare_trajectories \
-  --experiment "Experiment 45=cloud_outputs/RUN_45/analysis" \
-  --experiment "Experiment 46=cloud_outputs/RUN_46/analysis" \
-  --experiment "Experiment 47=cloud_outputs/RUN_47/analysis" \
-  --experiment "Experiment 48=cloud_outputs/RUN_48/analysis" \
-  --experiment "Experiment 49=cloud_outputs/RUN_49/analysis" \
-  --output-dir cloud_outputs/experiments_45_to_49_trajectory_comparison
-```
-
-Omit Experiment 49 until it exists. The utility uses last-observation-carried-
-forward interpolation only between a seed's first and final recorded
-evaluations, plots individual seed traces faintly, and plots the mean with a
-one-standard-error band only where every configured seed contributes. The
-temporal curves represent the in-training neural source policy; offline
-frozen-reservoir distillation arms remain endpoint-only comparisons.
+These audits intentionally do not produce temporal exploitability curves.
+Repeatedly producing a playable neural policy would consume part of the fixed
+12-hour learner budget, particularly under Experiment 46's 10,000-step policy
+fit. Each experiment instead writes `analysis/source_training_progress.csv`,
+`source_nodes_by_training_time.png`, and `source_losses_by_training_time.png`.
+Exact exploitability is reported for the once-fitted endpoint source policy,
+the empirical reservoir policy and the four frozen-reservoir fitting arms.
+Use Experiment 44 when a dense standard-ESCHER exploitability trajectory is
+required.
 
 For quick GCP smoke tests, first make sure the environment variables required
 by `gcp/submit_batch_experiment.sh` are set: `PROJECT_ID`, `REGION`, `BUCKET`,

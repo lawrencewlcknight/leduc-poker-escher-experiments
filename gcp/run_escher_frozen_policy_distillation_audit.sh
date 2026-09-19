@@ -68,13 +68,51 @@ build_json() {
 submit_job() {
   gcloud batch jobs submit "$1" --project "$PROJECT_ID" --location "$REGION" --config "$2"
 }
+verify_controller_iam() {
+  local member="serviceAccount:${SA_EMAIL}"
+  local batch_role self_act_as
+  batch_role="$(
+    gcloud projects get-iam-policy "$PROJECT_ID" \
+      --flatten='bindings[].members' \
+      --filter="bindings.role=roles/batch.jobsEditor AND bindings.members=${member}" \
+      --format='value(bindings.role)' \
+      --limit=1
+  )"
+  self_act_as="$(
+    gcloud iam service-accounts get-iam-policy "$SA_EMAIL" \
+      --project "$PROJECT_ID" \
+      --flatten='bindings[].members' \
+      --filter="bindings.role=roles/iam.serviceAccountUser AND bindings.members=${member}" \
+      --format='value(bindings.role)' \
+      --limit=1
+  )"
+  if [[ "$batch_role" != "roles/batch.jobsEditor" || "$self_act_as" != "roles/iam.serviceAccountUser" ]]; then
+    cat >&2 <<EOF
+The remote controller service account is missing required child-job permissions.
+Run these one-time commands, then submit again:
+
+gcloud projects add-iam-policy-binding "$PROJECT_ID" \\
+  --member="$member" \\
+  --role="roles/batch.jobsEditor"
+
+gcloud iam service-accounts add-iam-policy-binding "$SA_EMAIL" \\
+  --project="$PROJECT_ID" \\
+  --member="$member" \\
+  --role="roles/iam.serviceAccountUser"
+EOF
+    return 1
+  fi
+}
 job_state() {
   gcloud batch jobs describe "$1" --project "$PROJECT_ID" --location "$REGION" --format='value(status.state)'
 }
 wait_for_job() {
   local state
   while true; do
-    state="$(job_state "$1")"
+    if ! state="$(job_state "$1" 2>&1)"; then
+      echo "Unable to inspect child Batch job $1: $state" >&2
+      return 1
+    fi
     echo "$(date -u '+%Y-%m-%dT%H:%M:%SZ') $1: $state"
     case "$state" in SUCCEEDED) return 0 ;; FAILED|DELETION_IN_PROGRESS) return 1 ;; esac
     sleep 30
@@ -121,6 +159,7 @@ case "$ACTION" in
     submit_job "$SMOKE_JOB" "$TEMP_DIR/smoke.json"
     ;;
   run|resume)
+    verify_controller_iam
     submit_job "$CONTROLLER_JOB" "$TEMP_DIR/controller.json"
     echo "Remote Experiment ${EXPERIMENT_NUMBER} controller submitted: $CONTROLLER_JOB"
     echo "The laptop may now be disconnected or switched off."

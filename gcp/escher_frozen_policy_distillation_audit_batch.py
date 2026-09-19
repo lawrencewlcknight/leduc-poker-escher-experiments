@@ -91,6 +91,12 @@ export RUN_ID={_q(args.run_id)}
 export PARALLELISM={_q(args.parallelism)}
 export EXP45_REMOTE_CONTROLLER=1
 
+# Fail immediately instead of polling forever if the controller identity lost
+# the Batch permissions required to create and inspect its child jobs.
+gcloud batch jobs list \
+  --project "$PROJECT_ID" --location "$REGION" --limit 1 \
+  --format='value(name)' >/dev/null
+
 exec bash gcp/run_escher_frozen_policy_distillation_audit.sh "$CONTROLLER_ACTION"
 """
 

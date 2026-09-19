@@ -1229,6 +1229,7 @@ class ESCHERSolver(policy.Policy):
         self,
         save_path_convs=None,
         post_evaluation_callback=None,
+        post_iteration_callback=None,
         max_wall_clock_seconds=None,
     ):
         """Run ESCHER training and collect thesis-style diagnostics.
@@ -1244,6 +1245,12 @@ class ESCHERSolver(policy.Policy):
             while ``self._iteration`` records the completed solve-pass count.
             This permits lightweight policy snapshots without stopping or
             restarting training.
+          post_iteration_callback: Optional callable invoked after every
+            completed ESCHER solve pass as ``callback(self, progress)``.  The
+            supplied mapping contains only metrics already available in the
+            training loop; using it does not fit or evaluate the average-policy
+            network.  This is intended for low-overhead progress telemetry in
+            fixed wall-clock experiments.
           max_wall_clock_seconds: Optional active-training budget. The solver
             does not start another iteration once this many seconds have
             elapsed. Any iteration already in progress is completed, so the
@@ -1573,6 +1580,31 @@ class ESCHERSolver(policy.Policy):
 
                         if post_evaluation_callback is not None:
                             post_evaluation_callback(self, int(i))
+
+                    if post_iteration_callback is not None:
+                        post_iteration_callback(self, {
+                            "iteration": int(i + 1),
+                            "solver_iteration": int(self._iteration),
+                            "nodes_touched": int(num_nodes),
+                            "wall_clock_seconds": float(
+                                time.perf_counter() - solve_start_monotonic
+                            ),
+                            "learning_rate": float(current_lr),
+                            "value_loss": float(last_value_loss),
+                            "value_test_loss": float(last_value_test_loss),
+                            "regret_loss_player_0": float(
+                                last_regret_losses.get(0, np.nan)
+                            ),
+                            "regret_loss_player_1": float(
+                                last_regret_losses.get(1, np.nan)
+                            ),
+                            "cumulative_regret_traversal_seconds": float(
+                                self._cumulative_regret_traversal_seconds
+                            ),
+                            "cumulative_value_traversal_seconds": float(
+                                self._cumulative_value_traversal_seconds
+                            ),
+                        })
 
         active_training_seconds = time.perf_counter() - solve_start_monotonic
 

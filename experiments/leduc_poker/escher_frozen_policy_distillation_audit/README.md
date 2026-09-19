@@ -11,10 +11,13 @@ ESCHER architecture and each receives exactly 12 active training hours on an
 `n2-standard-8`. Touched nodes and completed iterations are outcomes rather
 than stopping criteria. The solver checks the monotonic deadline between
 iterations and completes an iteration already in flight, so a run can exceed
-12 hours by at most one iteration. The ten-iteration evaluation and
-policy-fitting cadence is retained. The regret and transient value memories
-remain at 50,000 rows. Only the lifetime average-policy reservoir is enlarged
-to 1,000,000 rows.
+12 hours by at most one iteration. Intermediate average-policy fitting and
+exact exploitability evaluation are disabled: the timed budget is reserved
+for regret and history-value learning. Learner-only telemetry (time, nodes,
+losses and replay occupancy) is recorded every ten completed iterations at
+negligible cost. The playable source policy is fitted once after the timed
+boundary. The regret and transient value memories remain at 50,000 rows. Only
+the lifetime average-policy reservoir is enlarged to 1,000,000 rows.
 
 After each source run, the final reservoir is frozen to a compressed NPZ file,
 checksummed, reloaded, grouped by information set, and evaluated exactly. Four
@@ -85,6 +88,12 @@ export PARALLELISM=3
 ./gcp/run_escher_frozen_policy_distillation_audit.sh run
 ```
 
+The remote controller must be able to create and inspect its child Batch jobs
+and act as the configured runner account. The launcher now checks these roles
+before submission and prints the exact one-time IAM commands if either is
+missing. The required bindings are `roles/batch.jobsEditor` on the project and
+`roles/iam.serviceAccountUser` on `SA_EMAIL` for that same service account.
+
 The laptop may be disconnected after submission. Check or resume the
 cloud-owned workflow with:
 
@@ -106,18 +115,18 @@ later-stage failure does not require successful earlier seeds to be rerun.
 | Output | Contents |
 | --- | --- |
 | `seed_<seed>/frozen_average_policy_reservoir.npz` | Lossless frozen final reservoir used by every arm. |
-| `seed_<seed>/source_trajectory.csv` | Every in-training source-policy evaluation plus the final playable-policy fit, including time, nodes, exploitability, policy value, losses and replay sizes. |
+| `seed_<seed>/source_training_progress.csv` | Learner-only time, nodes, losses and replay sizes; it does not fit or evaluate the average-policy network. |
 | `source_seed_metrics.csv` | Source training budget, realised time/overshoot, iterations, nodes, reservoir, empirical-policy and archived neural-policy diagnostics. |
-| `source_trajectory.csv` | Canonical combined raw trajectory for all seeds. |
-| `source_trajectory_summary.csv` | Checkpoint-aligned cross-seed means, standard deviations, standard errors and contributing seed counts. |
-| `source_exploitability_by_training_time.png` | Raw seed paths and cross-seed source-policy exploitability by training time. |
-| `source_exploitability_by_nodes.png` | The same source-policy comparison by nodes touched. |
+| `source_training_progress.csv` | Combined learner-only progress records for all seeds. |
+| `source_nodes_by_training_time.png` | Per-seed source-learning throughput over the timed budget. |
+| `source_losses_by_training_time.png` | Per-seed regret and history-value losses without policy-distillation overhead. |
 | `fit_metrics.csv` | Exact exploitability, empirical gap, fitting work and runtime for every arm and seed. |
 | `arm_summary.csv` | Cross-seed means, standard deviations and standard errors. |
 | `exploitability_by_distillation_arm.png` | Exact arm comparison with the empirical-reservoir reference. |
 | `distillation_gap_by_arm.png` | Neural minus empirical-reservoir exploitability. |
 | `aggregate_summary.json` | Machine-readable experiment summary. |
 
-The source-policy trajectory is distinct from the four offline distillation
-arms. Those arms are fitted once after source training and therefore have only
-endpoint results.
+The source policy and four offline distillation arms have endpoint
+exploitability results only. Experiment 44 remains the dedicated dense
+source-policy trajectory study; this audit deliberately prioritises a clean
+12-hour learner budget.

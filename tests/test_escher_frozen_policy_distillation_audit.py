@@ -46,6 +46,11 @@ def test_experiment_45_preserves_core_memories_and_enlarges_only_policy():
     assert TRAINING_WALL_CLOCK_SECONDS == 12 * 60 * 60
     assert DEFAULT_CONFIG["expected_final_nodes_touched"] is None
     assert DEFAULT_CONFIG["check_exploitability_every"] == 10
+    assert DEFAULT_CONFIG["compute_exploitability"] is False
+    assert DEFAULT_CONFIG["training_progress_every"] == 10
+    assert DEFAULT_CONFIG["source_policy_fit_mode"] == (
+        "final_only_after_timed_training"
+    )
     assert DEFAULT_CONFIG["memory_capacity"] == 50_000
     assert DEFAULT_CONFIG["regret_memory_capacity"] == 50_000
     assert DEFAULT_CONFIG["value_memory_capacity"] == 50_000
@@ -196,6 +201,8 @@ def test_smoke_config_reduces_all_expensive_dimensions():
     assert config["average_policy_memory_capacity"] == 256
     assert config["policy_network_layers"] == (8, 8)
     assert config["policy_network_train_steps"] == 2
+    assert config["compute_exploitability"] is False
+    assert config["training_progress_every"] == 1
 
 
 def test_solver_uses_independent_memory_capacities():
@@ -250,13 +257,19 @@ def test_solver_wall_clock_budget_stops_at_a_completed_iteration():
     )
     config = build_config(args)
     solver = make_escher_solver(pyspiel.load_game("leduc_poker"), config)
-    solver.solve(max_wall_clock_seconds=1e-9)
+    progress = []
+    _, _, convs, nodes, values, _ = solver.solve(
+        max_wall_clock_seconds=1e-9,
+        post_iteration_callback=lambda _solver, row: progress.append(row),
+    )
     summary = solver.get_last_solve_summary()
     assert summary["termination_reason"] == "wall_clock_limit"
     assert summary["hit_wall_clock_limit"] is True
     assert summary["completed_solve_passes"] == 1
     assert summary["active_training_seconds"] >= 1e-9
     assert summary["nodes_touched"] == solver.get_num_nodes()
+    assert progress
+    assert not convs and not nodes and not values
 
 
 def test_cloud_task_schedule_is_one_task_per_production_seed():
@@ -294,3 +307,29 @@ def test_batch_builder_runs_all_seed_tasks_on_separate_parallel_vms(tmp_path):
     script = task_group["taskSpec"]["runnables"][0]["script"]["text"]
     assert 'git -C "$REPOSITORY" checkout --detach "$REPO_REF"' in script
     assert "escher_frozen_policy_distillation_audit.cloud" in script
+
+
+def test_controller_fails_fast_when_child_job_listing_is_forbidden(tmp_path):
+    repository_root = Path(__file__).resolve().parents[1]
+    builder = repository_root / "gcp" / "escher_frozen_policy_distillation_audit_batch.py"
+    output = tmp_path / "controller.json"
+    subprocess.run(
+        [
+            sys.executable,
+            str(builder),
+            "--kind", "controller",
+            "--output", str(output),
+            "--run-id", "exp45-test",
+            "--bucket-root", "gs://test-bucket",
+            "--service-account", "test@example.invalid",
+            "--repo-ref", "deadbeef",
+            "--project-id", "test-project",
+            "--region", "europe-west1",
+        ],
+        check=True,
+    )
+    with open(output, encoding="utf-8") as handle:
+        job = json.load(handle)
+    script = job["taskGroups"][0]["taskSpec"]["runnables"][0]["script"]["text"]
+    assert "gcloud batch jobs list" in script
+    assert "--limit 1" in script

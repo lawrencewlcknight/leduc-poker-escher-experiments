@@ -60,14 +60,6 @@ from .distillation import (  # noqa: E402
     load_frozen_reservoir,
     save_frozen_reservoir,
 )
-from .trajectory import (  # noqa: E402
-    build_final_policy_row,
-    build_trajectory_rows,
-    export_aggregate_trajectory,
-    write_trajectory_rows,
-)
-
-
 _LOGGER = logging.getLogger("escher_poker.experiment.frozen_policy_distillation")
 
 
@@ -107,11 +99,19 @@ def _write_csv(path: Path, rows: Sequence[Mapping]) -> None:
 
 def build_config(args) -> dict:
     config = deepcopy(DEFAULT_CONFIG)
+    progress_interval = getattr(args, "progress_interval", None)
+    legacy_interval = getattr(args, "evaluation_interval", None)
+    if progress_interval is not None and legacy_interval is not None:
+        raise ValueError(
+            "Use --progress-interval; do not also pass --evaluation-interval"
+        )
+    if progress_interval is None:
+        progress_interval = legacy_interval
     overrides = {
         "num_iterations": args.iterations,
         "num_traversals": args.traversals,
         "num_val_fn_traversals": args.value_traversals,
-        "check_exploitability_every": args.evaluation_interval,
+        "training_progress_every": progress_interval,
         "memory_capacity": args.memory_capacity,
         "regret_memory_capacity": getattr(args, "regret_memory_capacity", None),
         "value_memory_capacity": getattr(args, "value_memory_capacity", None),
@@ -138,7 +138,7 @@ def build_config(args) -> dict:
             "num_iterations": 2,
             "num_traversals": 2,
             "num_val_fn_traversals": 2,
-            "check_exploitability_every": 1,
+            "training_progress_every": 1,
             "memory_capacity": 128,
             "regret_memory_capacity": 128,
             "value_memory_capacity": 128,
@@ -181,6 +181,45 @@ def _fit_seed(training_seed: int, config: Mapping[str, object]) -> int:
     return int(config["fit_seed_offset"]) + int(training_seed)
 
 
+def _training_progress_row(
+    *, solver, seed: int, checkpoint_index: int, progress: Mapping,
+    is_final_training_point: bool = False,
+) -> dict:
+    """Create learner-only telemetry without fitting the average policy."""
+    cumulative_regret = float(progress["cumulative_regret_traversal_seconds"])
+    cumulative_value = float(progress["cumulative_value_traversal_seconds"])
+    return {
+        "experiment_id": EXPERIMENT_ID,
+        "experiment_name": EXPERIMENT_NAME,
+        "seed": int(seed),
+        "checkpoint_index": int(checkpoint_index),
+        "is_final_training_point": bool(is_final_training_point),
+        "iteration": int(progress["iteration"]),
+        "solver_iteration": int(progress["solver_iteration"]),
+        "nodes_touched": int(progress["nodes_touched"]),
+        "wall_clock_seconds": float(progress["wall_clock_seconds"]),
+        "training_hours": float(progress["wall_clock_seconds"]) / 3_600.0,
+        "learning_rate": float(progress["learning_rate"]),
+        "value_loss": float(progress["value_loss"]),
+        "value_test_loss": float(progress["value_test_loss"]),
+        "regret_loss_player_0": float(progress["regret_loss_player_0"]),
+        "regret_loss_player_1": float(progress["regret_loss_player_1"]),
+        "cumulative_regret_traversal_seconds": cumulative_regret,
+        "cumulative_value_traversal_seconds": cumulative_value,
+        "cumulative_experience_collection_seconds": (
+            cumulative_regret + cumulative_value
+        ),
+        "average_policy_buffer_size": int(
+            solver.get_average_policy_memory_count()
+        ),
+        "regret_buffer_size_player_0": int(solver.get_regret_memory_count(0)),
+        "regret_buffer_size_player_1": int(solver.get_regret_memory_count(1)),
+        "value_buffer_size": int(len(solver.get_value_memory())),
+        "value_test_buffer_size": int(len(solver.get_value_memory_test())),
+        "peak_rss_mb": float(solver._current_rss_mb()),  # pylint: disable=protected-access
+    }
+
+
 def _run_seed(
     seed: int, config: dict, run_dir: Path
 ) -> tuple[dict, list[dict], list[dict]]:
@@ -196,9 +235,26 @@ def _run_seed(
         float(config["training_wall_clock_seconds"]) / 3_600.0,
         config["num_iterations"],
     )
+    progress_rows: list[dict] = []
+    latest_progress: dict = {}
+    progress_every = int(config["training_progress_every"])
+
+    def record_progress(current_solver, progress: Mapping) -> None:
+        latest_progress.clear()
+        latest_progress.update(progress)
+        solver_iteration = int(progress["solver_iteration"])
+        if solver_iteration == 1 or solver_iteration % progress_every == 0:
+            progress_rows.append(_training_progress_row(
+                solver=current_solver,
+                seed=seed,
+                checkpoint_index=len(progress_rows),
+                progress=progress,
+            ))
+
     training_started = time.perf_counter()
-    _, final_policy_loss, convs, nodes, values, diagnostics = solver.solve(
-        max_wall_clock_seconds=float(config["training_wall_clock_seconds"])
+    _, final_policy_loss, convs, nodes, values, _diagnostics = solver.solve(
+        max_wall_clock_seconds=float(config["training_wall_clock_seconds"]),
+        post_iteration_callback=record_progress,
     )
     training_seconds = time.perf_counter() - training_started
     solve_summary = solver.get_last_solve_summary()
@@ -211,33 +267,31 @@ def _run_seed(
             f"Experiment {EXPERIMENT_ID} reached its iteration safety cap "
             "before the configured training-time endpoint"
         )
+    if convs or nodes or values:
+        raise RuntimeError(
+            "Intermediate policy evaluation occurred inside the timed source run"
+        )
+    if not latest_progress:
+        raise RuntimeError("The source learner produced no progress telemetry")
+    final_solver_iteration = int(solve_summary["solver_iteration"])
+    if (
+        not progress_rows
+        or int(progress_rows[-1]["solver_iteration"]) != final_solver_iteration
+    ):
+        progress_rows.append(_training_progress_row(
+            solver=solver,
+            seed=seed,
+            checkpoint_index=len(progress_rows),
+            progress=latest_progress,
+            is_final_training_point=True,
+        ))
+    else:
+        progress_rows[-1]["is_final_training_point"] = True
+    progress_path = seed_dir / "source_training_progress.csv"
+    _write_csv(progress_path, progress_rows)
+
     source_metrics = exact_neural_policy_metrics(game, solver._policy_network)  # pylint: disable=protected-access
     source_final_iteration = int(solver._iteration)  # pylint: disable=protected-access
-    trajectory_rows = build_trajectory_rows(
-        experiment_id=EXPERIMENT_ID,
-        experiment_name=EXPERIMENT_NAME,
-        seed=seed,
-        nash_convs=convs,
-        nodes_touched=nodes,
-        average_policy_values=values,
-        diagnostics=diagnostics,
-    )
-    trajectory_rows.append(build_final_policy_row(
-        experiment_id=EXPERIMENT_ID,
-        experiment_name=EXPERIMENT_NAME,
-        seed=seed,
-        checkpoint_index=len(trajectory_rows),
-        iteration=source_final_iteration,
-        nodes_touched=float(solve_summary["nodes_touched"]),
-        wall_clock_seconds=float(
-            solve_summary["total_solve_seconds_including_final_policy_fit"]
-        ),
-        metrics=source_metrics,
-        final_policy_loss=float(np.asarray(final_policy_loss)),
-        diagnostics=diagnostics,
-    ))
-    trajectory_path = seed_dir / "source_trajectory.csv"
-    write_trajectory_rows(trajectory_path, trajectory_rows)
     final_buffer_rows = {
         "regret_player_0": int(solver.get_regret_memory_count(0)),
         "regret_player_1": int(solver.get_regret_memory_count(1)),
@@ -248,7 +302,10 @@ def _run_seed(
     value_peak_counts = solver.get_value_memory_peak_counts()
 
     def _max_observed_rows(diagnostic_name: str, final_rows: int) -> int:
-        values = np.asarray(diagnostics.get(diagnostic_name, []), dtype=np.float64)
+        values = np.asarray(
+            [row.get(diagnostic_name, np.nan) for row in progress_rows],
+            dtype=np.float64,
+        )
         finite = values[np.isfinite(values)]
         if finite.size == 0:
             return int(final_rows)
@@ -316,10 +373,13 @@ def _run_seed(
         ),
         "source_final_iteration": source_final_iteration,
         "source_final_nodes_touched": int(solve_summary["nodes_touched"]),
-        "source_last_checkpoint_nodes_touched": float(nodes[-1]),
-        "source_final_recorded_nash_conv": float(convs[-1]),
-        "source_final_recorded_exploitability": float(convs[-1]) / 2.0,
-        "source_final_recorded_policy_value": float(values[-1]),
+        "source_intermediate_policy_fit_events": 0,
+        "source_final_policy_fit_events": 1,
+        "source_policy_fit_mode": config["source_policy_fit_mode"],
+        "source_final_policy_fit_seconds": float(
+            solve_summary["total_solve_seconds_including_final_policy_fit"]
+            - solve_summary["active_training_seconds"]
+        ),
         "source_neural_exploitability_recomputed": source_metrics["exploitability"],
         "source_neural_policy_value_recomputed": source_metrics["policy_value"],
         "reservoir_rows": frozen.size,
@@ -345,8 +405,8 @@ def _run_seed(
         "source_neural_minus_empirical_gap": (
             source_metrics["exploitability"] - empirical_metrics["exploitability"]
         ),
-        "trajectory_points": len(trajectory_rows),
-        "trajectory_path": str(trajectory_path.relative_to(run_dir)),
+        "training_progress_points": len(progress_rows),
+        "training_progress_path": str(progress_path.relative_to(run_dir)),
         "final_policy_loss": float(np.asarray(final_policy_loss)),
         **{f"reservoir_{key}": value for key, value in reservoir_manifest.items() if key != "path"},
         "reservoir_path": str(reservoir_path.relative_to(run_dir)),
@@ -408,7 +468,7 @@ def _run_seed(
     })
     del frozen, grouped, base_weights
     cleanup_tensorflow_memory()
-    return source_row, fit_rows, trajectory_rows
+    return source_row, fit_rows, progress_rows
 
 
 def _summarise(source_rows: Sequence[Mapping], fit_rows: Sequence[Mapping]):
@@ -430,7 +490,11 @@ def _summarise(source_rows: Sequence[Mapping], fit_rows: Sequence[Mapping]):
             })
     for policy_id, policy_label, metric_key in (
         ("empirical_reservoir_policy", "Empirical reservoir policy", "empirical_reservoir_exploitability"),
-        ("source_neural_policy", "In-training neural policy", "source_neural_exploitability_recomputed"),
+        (
+            "source_neural_policy",
+            "Once-fitted endpoint source policy",
+            "source_neural_exploitability_recomputed",
+        ),
     ):
         stats = safe_stats([float(row[metric_key]) for row in source_rows])
         summary_rows.append({
@@ -481,17 +545,74 @@ def _plot_metric(
     plt.close(fig)
 
 
+def _plot_training_progress(
+    progress_rows: Sequence[Mapping], *, output_dir: Path
+) -> None:
+    """Plot learner throughput and losses without average-policy evaluation."""
+    output_dir = Path(output_dir)
+    seeds = sorted({int(row["seed"]) for row in progress_rows})
+
+    fig, ax = plt.subplots(figsize=(10.5, 6.0))
+    for seed in seeds:
+        rows = sorted(
+            (row for row in progress_rows if int(row["seed"]) == seed),
+            key=lambda row: float(row["training_hours"]),
+        )
+        ax.plot(
+            [float(row["training_hours"]) for row in rows],
+            [float(row["nodes_touched"]) for row in rows],
+            linewidth=1.4,
+            alpha=0.75,
+            label=f"Seed {seed}",
+        )
+    ax.set_xlabel("Active source-training time (hours)")
+    ax.set_ylabel("Nodes touched")
+    set_chart_title(ax, f"Experiment {EXPERIMENT_ID}: source-learning throughput")
+    ax.grid(alpha=0.2)
+    ax.legend()
+    fig.tight_layout()
+    fig.savefig(output_dir / "source_nodes_by_training_time.png", dpi=180)
+    plt.close(fig)
+
+    metrics = (
+        ("regret_loss_player_0", "Player 0 regret loss"),
+        ("regret_loss_player_1", "Player 1 regret loss"),
+        ("value_loss", "History-value loss"),
+    )
+    fig, axes = plt.subplots(len(metrics), 1, figsize=(10.5, 9.0), sharex=True)
+    for axis, (metric, label) in zip(axes, metrics):
+        for seed in seeds:
+            rows = sorted(
+                (row for row in progress_rows if int(row["seed"]) == seed),
+                key=lambda row: float(row["training_hours"]),
+            )
+            axis.plot(
+                [float(row["training_hours"]) for row in rows],
+                [float(row[metric]) for row in rows],
+                linewidth=1.0,
+                alpha=0.55,
+            )
+        axis.set_ylabel(label)
+        axis.grid(alpha=0.2)
+    axes[-1].set_xlabel("Active source-training time (hours)")
+    set_chart_title(axes[0], f"Experiment {EXPERIMENT_ID}: source-learning losses")
+    fig.tight_layout()
+    fig.savefig(output_dir / "source_losses_by_training_time.png", dpi=180)
+    plt.close(fig)
+
+
 def _aggregate(
     run_dir: Path,
     source_rows: Sequence[Mapping],
     fit_rows: Sequence[Mapping],
-    trajectory_rows: Sequence[Mapping],
+    progress_rows: Sequence[Mapping],
 ):
     summary_rows = _summarise(source_rows, fit_rows)
     _write_csv(run_dir / "source_seed_metrics.csv", source_rows)
     _write_csv(run_dir / "fit_metrics.csv", fit_rows)
     _write_csv(run_dir / "arm_summary.csv", summary_rows)
-    export_aggregate_trajectory(run_dir, trajectory_rows)
+    _write_csv(run_dir / "source_training_progress.csv", progress_rows)
+    _plot_training_progress(progress_rows, output_dir=run_dir)
     _plot_metric(
         fit_rows,
         source_rows,
@@ -514,7 +635,7 @@ def _aggregate(
         "experiment_name": EXPERIMENT_NAME,
         "num_completed_seeds": len(source_rows),
         "num_fit_rows": len(fit_rows),
-        "num_trajectory_rows": len(trajectory_rows),
+        "num_training_progress_rows": len(progress_rows),
         "arm_summary": summary_rows,
     }
     _write_json(run_dir / "aggregate_summary.json", result)
@@ -528,7 +649,11 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--iterations", type=int, default=None)
     parser.add_argument("--traversals", type=int, default=None)
     parser.add_argument("--value-traversals", type=int, default=None)
-    parser.add_argument("--evaluation-interval", type=int, default=None)
+    parser.add_argument("--progress-interval", type=int, default=None)
+    parser.add_argument(
+        "--evaluation-interval", type=int, default=None,
+        help="Deprecated alias for --progress-interval; no policy is evaluated",
+    )
     parser.add_argument("--memory-capacity", type=int, default=None)
     parser.add_argument("--regret-memory-capacity", type=int, default=None)
     parser.add_argument("--value-memory-capacity", type=int, default=None)
@@ -567,17 +692,17 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
     _LOGGER.info("Run directory: %s", run_dir.resolve())
     _LOGGER.info("Seeds: %s", seeds)
 
-    source_rows, fit_rows, trajectory_rows, failures = [], [], [], []
+    source_rows, fit_rows, progress_rows, failures = [], [], [], []
     for index, seed in enumerate(seeds, start=1):
         _LOGGER.info("Starting seed %s (%s/%s)", seed, index, len(seeds))
         try:
-            source_row, seed_fit_rows, seed_trajectory_rows = _run_seed(
+            source_row, seed_fit_rows, seed_progress_rows = _run_seed(
                 seed, config, run_dir
             )
             source_rows.append(source_row)
             fit_rows.extend(seed_fit_rows)
-            trajectory_rows.extend(seed_trajectory_rows)
-            _aggregate(run_dir, source_rows, fit_rows, trajectory_rows)
+            progress_rows.extend(seed_progress_rows)
+            _aggregate(run_dir, source_rows, fit_rows, progress_rows)
         except Exception as exc:  # pragma: no cover - operational failure path
             _LOGGER.exception("Seed %s failed: %s", seed, exc)
             failures.append({
@@ -593,7 +718,7 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
 
     if not source_rows:
         return 1
-    result = _aggregate(run_dir, source_rows, fit_rows, trajectory_rows)
+    result = _aggregate(run_dir, source_rows, fit_rows, progress_rows)
     if failures:
         result["status"] = "partial"
         result["failures"] = failures
