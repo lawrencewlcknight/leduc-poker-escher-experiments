@@ -1,6 +1,10 @@
 """Contract and mathematical tests for Experiment 45."""
 
 from argparse import Namespace
+import json
+from pathlib import Path
+import subprocess
+import sys
 
 import numpy as np
 import pyspiel
@@ -10,6 +14,9 @@ from experiments.leduc_poker.escher_frozen_policy_distillation_audit.config impo
     ARM_ORDER,
     DEFAULT_CONFIG,
     DEFAULT_SEEDS,
+)
+from experiments.leduc_poker.escher_frozen_policy_distillation_audit.cloud import (
+    task_name,
 )
 from experiments.leduc_poker.escher_frozen_policy_distillation_audit.distillation import (
     FrozenReservoir,
@@ -94,3 +101,38 @@ def test_solver_uses_independent_policy_and_core_memory_capacities():
     assert solver._regret_memories[1]._reservoir_buffer_capacity == 7
     assert solver._value_memory._reservoir_buffer_capacity == 7
     assert solver._value_memory_test._reservoir_buffer_capacity == 7
+
+
+def test_cloud_task_schedule_is_one_task_per_production_seed():
+    assert [task_name(index, DEFAULT_SEEDS) for index in range(3)] == [
+        "task_000_seed_1234",
+        "task_001_seed_2025",
+        "task_002_seed_31415",
+    ]
+
+
+def test_batch_builder_forces_sequential_seed_execution(tmp_path):
+    repository_root = Path(__file__).resolve().parents[1]
+    builder = repository_root / "gcp" / "escher_frozen_policy_distillation_audit_batch.py"
+    output = tmp_path / "train.json"
+    subprocess.run(
+        [
+            sys.executable,
+            str(builder),
+            "--kind", "train",
+            "--output", str(output),
+            "--run-id", "exp45-test",
+            "--bucket-root", "gs://test-bucket",
+            "--service-account", "test@example.invalid",
+            "--repo-ref", "deadbeef",
+        ],
+        check=True,
+    )
+    with open(output, encoding="utf-8") as handle:
+        job = json.load(handle)
+    task_group = job["taskGroups"][0]
+    assert task_group["taskCount"] == 3
+    assert task_group["parallelism"] == 1
+    script = task_group["taskSpec"]["runnables"][0]["script"]["text"]
+    assert 'git -C "$REPOSITORY" checkout --detach "$REPO_REF"' in script
+    assert "escher_frozen_policy_distillation_audit.cloud" in script

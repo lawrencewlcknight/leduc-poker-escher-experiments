@@ -730,6 +730,32 @@ python -m experiments.leduc_poker.escher_final_candidate_trajectory_15m.run
 python -m experiments.leduc_poker.escher_frozen_policy_distillation_audit.run
 ```
 
+### Experiment 45 cloud run: sequential seeds
+
+Experiment 45 follows the remote-controller structure used by Experiment 35
+in the ESCHER-architecture repository. Its cloud smoke, production training,
+and aggregation stages are ordered automatically. Production is a three-task
+array with `parallelism=1`, so seeds `1234`, `2025`, and `31415` run one at a
+time rather than concurrently.
+
+```bash
+./gcp/run_escher_frozen_policy_distillation_audit.sh smoke-local
+
+export REPO_REF="$(git rev-parse HEAD)"
+export RUN_ID="exp45-dist-$(date -u '+%Y%m%d-%H%M%S')"
+
+./gcp/run_escher_frozen_policy_distillation_audit.sh run
+```
+
+The controller is cloud-owned; after submission the laptop may be disconnected.
+Use the same `PROJECT_ID`, `REGION`, `BUCKET`, and `SA_EMAIL` values as for the
+existing Batch experiments. Monitor or resume with:
+
+```bash
+./gcp/run_escher_frozen_policy_distillation_audit.sh status
+./gcp/run_escher_frozen_policy_distillation_audit.sh resume
+```
+
 For quick GCP smoke tests, first make sure the environment variables required
 by `gcp/submit_batch_experiment.sh` are set: `PROJECT_ID`, `REGION`, `BUCKET`,
 and `SA_EMAIL`. Then paste any of the following commands from the repository
@@ -1356,13 +1382,8 @@ inspect a job without submitting it; `BATCH_MAX_RETRY_COUNT` and
     --output-root outputs/cloud/escher-smoke-exp44" \
   "n2-standard-4" "3600" "4000" "16000" "100"
 
-# Experiment 45 smoke test — 1M-policy-reservoir frozen distillation audit
-./gcp/submit_batch_experiment.sh \
-  "escher-smoke-exp45-$(date +%Y%m%d-%H%M%S)" \
-  "/usr/bin/time -v python -m experiments.leduc_poker.escher_frozen_policy_distillation_audit.run \
-    --smoke \
-    --output-root outputs/cloud/escher-smoke-exp45" \
-  "n2-standard-4" "3600" "4000" "16000" "100"
+# Experiment 45 local smoke test — also exercises worker/aggregate orchestration
+./gcp/run_escher_frozen_policy_distillation_audit.sh smoke-local
 ```
 
 Outputs are written to a timestamped subdirectory under `outputs/` by default. The key files are:

@@ -58,19 +58,42 @@ evidence.
 
 ## GCP Batch
 
-With the same `PROJECT_ID`, `REGION`, `BUCKET`, and `SA_EMAIL` environment
-variables used by the earlier ESCHER experiments:
+Experiment 45 uses the same cloud-owned controller pattern as Experiment 35
+in the ESCHER-architecture repository. The controller first requires the cloud
+smoke test to succeed, then submits the three-seed training array, and finally
+runs aggregation. The array has `taskCount=3` but fixed `parallelism=1`, so the
+three isolated seed tasks execute sequentially. Aggregation cannot start until
+all three have succeeded.
+
+Run the mandatory local smoke test from the repository root:
 
 ```bash
-./gcp/submit_batch_experiment.sh \
-  "leduc-escher-exp45-distill-$(date +%Y%m%d-%H%M%S)" \
-  "/usr/bin/time -v python -m experiments.leduc_poker.escher_frozen_policy_distillation_audit.run \
-    --output-root outputs/cloud/leduc-escher-exp45-distill" \
-  "n2-standard-8" "216000" "8000" "32000" "150"
+./gcp/run_escher_frozen_policy_distillation_audit.sh smoke-local
 ```
 
-The 60-hour hard limit bounds cost while leaving margin above the expected
-three-seed sequential runtime.
+After pushing that exact tested commit, reuse the `PROJECT_ID`, `REGION`,
+`BUCKET`, and `SA_EMAIL` environment variables from earlier experiments:
+
+```bash
+export REPO_REF="$(git rev-parse HEAD)"
+export RUN_ID="exp45-dist-$(date -u '+%Y%m%d-%H%M%S')"
+
+./gcp/run_escher_frozen_policy_distillation_audit.sh run
+```
+
+The laptop may be disconnected after submission. Check or resume the
+cloud-owned workflow with:
+
+```bash
+./gcp/run_escher_frozen_policy_distillation_audit.sh status
+./gcp/run_escher_frozen_policy_distillation_audit.sh resume
+```
+
+Each seed task has a 24-hour hard ceiling and one automatic retry; the full
+controller has a seven-day ceiling. Expected elapsed time remains about
+39--48 hours because only one seed task is admitted at a time. A completed
+seed is uploaded independently and is reused by `resume`, so a later-stage
+failure does not require successful earlier seeds to be rerun.
 
 ## Principal outputs
 
