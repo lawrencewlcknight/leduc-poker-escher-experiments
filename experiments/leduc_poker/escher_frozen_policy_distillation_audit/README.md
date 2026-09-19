@@ -61,9 +61,10 @@ evidence.
 Experiment 45 uses the same cloud-owned controller pattern as Experiment 35
 in the ESCHER-architecture repository. The controller first requires the cloud
 smoke test to succeed, then submits the three-seed training array, and finally
-runs aggregation. The array has `taskCount=3` but fixed `parallelism=1`, so the
-three isolated seed tasks execute sequentially. Aggregation cannot start until
-all three have succeeded.
+runs aggregation. The array has `taskCount=3`, `parallelism=3`, and
+`taskCountPerNode=1`, so the three isolated seed tasks execute concurrently on
+three separate `n2-standard-8` VMs. Aggregation cannot start until all three
+have succeeded.
 
 Run the mandatory local smoke test from the repository root:
 
@@ -77,6 +78,7 @@ After pushing that exact tested commit, reuse the `PROJECT_ID`, `REGION`,
 ```bash
 export REPO_REF="$(git rev-parse HEAD)"
 export RUN_ID="exp45-dist-$(date -u '+%Y%m%d-%H%M%S')"
+export PARALLELISM=3
 
 ./gcp/run_escher_frozen_policy_distillation_audit.sh run
 ```
@@ -90,10 +92,12 @@ cloud-owned workflow with:
 ```
 
 Each seed task has a 24-hour hard ceiling and one automatic retry; the full
-controller has a seven-day ceiling. Expected elapsed time remains about
-39--48 hours because only one seed task is admitted at a time. A completed
-seed is uploaded independently and is reused by `resume`, so a later-stage
-failure does not require successful earlier seeds to be rerun.
+controller has a seven-day ceiling. Expected elapsed time is approximately
+14--17 hours, comprising setup, the slowest source-training and distillation
+worker, and final aggregation. The compute budget remains approximately
+39--48 N2 VM-hours because the three workers consume those hours concurrently.
+A completed seed is uploaded independently and is reused by `resume`, so a
+later-stage failure does not require successful earlier seeds to be rerun.
 
 ## Principal outputs
 

@@ -28,6 +28,11 @@ if [[ ${#RUN_ID} -gt 30 || ! "$RUN_ID" =~ ^[a-z][a-z0-9-]*[a-z0-9]$ ]]; then
   exit 2
 fi
 if [[ "$BUCKET" == gs://* ]]; then BUCKET_ROOT="${BUCKET%/}"; else BUCKET_ROOT="gs://${BUCKET%/}"; fi
+PARALLELISM="${PARALLELISM:-3}"
+if [[ ! "$PARALLELISM" =~ ^[1-3]$ ]]; then
+  echo "PARALLELISM must be 1, 2, or 3" >&2
+  exit 2
+fi
 
 SMOKE_JOB="${RUN_ID}-smoke"
 TRAIN_JOB="${RUN_ID}-train"
@@ -53,7 +58,7 @@ build_json() {
   python3 "$BUILDER" --kind "$1" --output "$2" --run-id "$RUN_ID" \
     --bucket-root "$BUCKET_ROOT" --service-account "$SA_EMAIL" \
     --repo-ref "$REPO_REF" --project-id "$PROJECT_ID" --region "$REGION" \
-    --controller-action "$CONTROLLER_ACTION"
+    --parallelism "$PARALLELISM" --controller-action "$CONTROLLER_ACTION"
 }
 submit_job() {
   gcloud batch jobs submit "$1" --project "$PROJECT_ID" --location "$REGION" --config "$2"

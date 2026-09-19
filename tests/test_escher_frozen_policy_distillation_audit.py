@@ -111,7 +111,7 @@ def test_cloud_task_schedule_is_one_task_per_production_seed():
     ]
 
 
-def test_batch_builder_forces_sequential_seed_execution(tmp_path):
+def test_batch_builder_runs_all_seed_tasks_on_separate_parallel_vms(tmp_path):
     repository_root = Path(__file__).resolve().parents[1]
     builder = repository_root / "gcp" / "escher_frozen_policy_distillation_audit_batch.py"
     output = tmp_path / "train.json"
@@ -132,7 +132,9 @@ def test_batch_builder_forces_sequential_seed_execution(tmp_path):
         job = json.load(handle)
     task_group = job["taskGroups"][0]
     assert task_group["taskCount"] == 3
-    assert task_group["parallelism"] == 1
+    assert task_group["parallelism"] == 3
+    assert task_group["taskCountPerNode"] == 1
+    assert job["allocationPolicy"]["instances"][0]["policy"]["machineType"] == "n2-standard-8"
     script = task_group["taskSpec"]["runnables"][0]["script"]["text"]
     assert 'git -C "$REPOSITORY" checkout --detach "$REPO_REF"' in script
     assert "escher_frozen_policy_distillation_audit.cloud" in script

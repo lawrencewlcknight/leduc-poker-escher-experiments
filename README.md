@@ -730,19 +730,20 @@ python -m experiments.leduc_poker.escher_final_candidate_trajectory_15m.run
 python -m experiments.leduc_poker.escher_frozen_policy_distillation_audit.run
 ```
 
-### Experiment 45 cloud run: sequential seeds
+### Experiment 45 cloud run: parallel seed VMs
 
 Experiment 45 follows the remote-controller structure used by Experiment 35
 in the ESCHER-architecture repository. Its cloud smoke, production training,
 and aggregation stages are ordered automatically. Production is a three-task
-array with `parallelism=1`, so seeds `1234`, `2025`, and `31415` run one at a
-time rather than concurrently.
+array with `parallelism=3` and `taskCountPerNode=1`, so seeds `1234`, `2025`,
+and `31415` run concurrently on three separate `n2-standard-8` VMs.
 
 ```bash
 ./gcp/run_escher_frozen_policy_distillation_audit.sh smoke-local
 
 export REPO_REF="$(git rev-parse HEAD)"
 export RUN_ID="exp45-dist-$(date -u '+%Y%m%d-%H%M%S')"
+export PARALLELISM=3
 
 ./gcp/run_escher_frozen_policy_distillation_audit.sh run
 ```

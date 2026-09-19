@@ -209,7 +209,7 @@ def aggregate_workers(
         "smoke": bool(smoke),
         "production_seeds": [int(seed) for seed in seeds],
         "repository_commit": next(iter(commits)),
-        "execution_contract": "one seed task at a time",
+        "execution_contract": "one isolated seed task per VM",
     })
     _write_json(output_dir / "aggregate_summary.json", result)
     return result
@@ -269,7 +269,7 @@ def _cmd_schedule(args) -> None:
             {"task_index": index, "task_name": task_name(index, seeds), "seed": seed}
             for index, seed in enumerate(seeds)
         ],
-        "parallelism": 1,
+        "parallelism": len(seeds),
     }, indent=2))
 
 

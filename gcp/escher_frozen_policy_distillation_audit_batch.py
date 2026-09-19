@@ -88,6 +88,7 @@ export BUCKET={_q(args.bucket_root.rstrip('/'))}
 export SA_EMAIL={_q(args.service_account)}
 export REPO_REF={_q(args.repo_ref)}
 export RUN_ID={_q(args.run_id)}
+export PARALLELISM={_q(args.parallelism)}
 export EXP45_REMOTE_CONTROLLER=1
 
 exec bash gcp/run_escher_frozen_policy_distillation_audit.sh "$CONTROLLER_ACTION"
@@ -146,9 +147,9 @@ gcloud storage rsync --recursive "$OUTPUT_ROOT/analysis" "$BUCKET_ROOT/$RUN_ID/a
 
 def build_job(args) -> dict:
     task_count = TASK_COUNT if args.kind == "train" else 1
-    # The scientific contract requires the three production seeds to execute
-    # one at a time. The array is retained for isolated artifacts and retries.
-    parallelism = 1
+    # As in Experiment 35, each production seed is an isolated array task and
+    # taskCountPerNode=1 keeps concurrently admitted tasks on separate VMs.
+    parallelism = min(task_count, args.parallelism)
     if args.kind == "train":
         max_duration, cpu, memory, machine, disk = "86400s", 8000, 30000, "n2-standard-8", 150
     elif args.kind == "smoke":
@@ -196,6 +197,7 @@ def main() -> None:
     parser.add_argument("--service-account", required=True)
     parser.add_argument("--repo-ref", required=True)
     parser.add_argument("--repo-url", default=REPO_URL)
+    parser.add_argument("--parallelism", type=int, default=TASK_COUNT)
     parser.add_argument("--project-id", default="")
     parser.add_argument("--region", default="")
     parser.add_argument(
@@ -204,6 +206,8 @@ def main() -> None:
         default="orchestrate",
     )
     args = parser.parse_args()
+    if args.parallelism < 1 or args.parallelism > TASK_COUNT:
+        parser.error(f"--parallelism must be between 1 and {TASK_COUNT}")
     if args.kind == "controller" and (not args.project_id or not args.region):
         parser.error("controller jobs require --project-id and --region")
     args.output.parent.mkdir(parents=True, exist_ok=True)
