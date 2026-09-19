@@ -107,6 +107,11 @@ def build_config(args) -> dict:
         "num_val_fn_traversals": args.value_traversals,
         "check_exploitability_every": args.evaluation_interval,
         "memory_capacity": args.memory_capacity,
+        "regret_memory_capacity": getattr(args, "regret_memory_capacity", None),
+        "value_memory_capacity": getattr(args, "value_memory_capacity", None),
+        "value_validation_memory_capacity": getattr(
+            args, "value_validation_memory_capacity", None
+        ),
         "average_policy_memory_capacity": args.average_policy_memory_capacity,
         "policy_network_train_steps": args.policy_network_train_steps,
         "regret_network_train_steps": args.regret_network_train_steps,
@@ -129,6 +134,9 @@ def build_config(args) -> dict:
             "num_val_fn_traversals": 2,
             "check_exploitability_every": 1,
             "memory_capacity": 128,
+            "regret_memory_capacity": 128,
+            "value_memory_capacity": 128,
+            "value_validation_memory_capacity": 128,
             "average_policy_memory_capacity": 256,
             "policy_network_train_steps": 2,
             "regret_network_train_steps": 1,
@@ -197,6 +205,44 @@ def _run_seed(seed: int, config: dict, run_dir: Path) -> tuple[dict, list[dict]]
         )
     source_metrics = exact_neural_policy_metrics(game, solver._policy_network)  # pylint: disable=protected-access
     source_final_iteration = int(solver._iteration)  # pylint: disable=protected-access
+    final_buffer_rows = {
+        "regret_player_0": int(solver.get_regret_memory_count(0)),
+        "regret_player_1": int(solver.get_regret_memory_count(1)),
+        "value_training": int(len(solver.get_value_memory())),
+        "value_validation": int(len(solver.get_value_memory_test())),
+        "average_policy": int(solver.get_average_policy_memory_count()),
+    }
+    value_peak_counts = solver.get_value_memory_peak_counts()
+
+    def _max_observed_rows(diagnostic_name: str, final_rows: int) -> int:
+        values = np.asarray(diagnostics.get(diagnostic_name, []), dtype=np.float64)
+        finite = values[np.isfinite(values)]
+        if finite.size == 0:
+            return int(final_rows)
+        return max(int(final_rows), int(np.max(finite)))
+
+    max_observed_buffer_rows = {
+        "regret_player_0": _max_observed_rows(
+            "regret_buffer_size_player_0", final_buffer_rows["regret_player_0"]
+        ),
+        "regret_player_1": _max_observed_rows(
+            "regret_buffer_size_player_1", final_buffer_rows["regret_player_1"]
+        ),
+        "value_training": _max_observed_rows(
+            "value_buffer_size",
+            max(final_buffer_rows["value_training"], value_peak_counts["training"]),
+        ),
+        "value_validation": _max_observed_rows(
+            "value_test_buffer_size",
+            max(
+                final_buffer_rows["value_validation"],
+                value_peak_counts["validation"],
+            ),
+        ),
+        "average_policy": _max_observed_rows(
+            "average_policy_buffer_size", final_buffer_rows["average_policy"]
+        ),
+    }
     serialized = list(solver.get_average_policy_memories())
     if len(serialized) > int(config["average_policy_memory_capacity"]):
         raise RuntimeError("Policy reservoir exceeded its configured capacity")
@@ -245,6 +291,19 @@ def _run_seed(seed: int, config: dict, run_dir: Path) -> tuple[dict, list[dict]]
         "source_neural_policy_value_recomputed": source_metrics["policy_value"],
         "reservoir_rows": frozen.size,
         "unique_information_sets": grouped.size,
+        "regret_memory_capacity": int(config["regret_memory_capacity"]),
+        "value_memory_capacity": int(config["value_memory_capacity"]),
+        "value_validation_memory_capacity": int(
+            config["value_validation_memory_capacity"]
+        ),
+        **{
+            f"final_{name}_buffer_rows": rows
+            for name, rows in final_buffer_rows.items()
+        },
+        **{
+            f"max_observed_{name}_buffer_rows": rows
+            for name, rows in max_observed_buffer_rows.items()
+        },
         "reservoir_capacity": int(config["average_policy_memory_capacity"]),
         "reservoir_fill_fraction": frozen.size / float(config["average_policy_memory_capacity"]),
         "empirical_reservoir_exploitability": empirical_metrics["exploitability"],
@@ -430,6 +489,9 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--value-traversals", type=int, default=None)
     parser.add_argument("--evaluation-interval", type=int, default=None)
     parser.add_argument("--memory-capacity", type=int, default=None)
+    parser.add_argument("--regret-memory-capacity", type=int, default=None)
+    parser.add_argument("--value-memory-capacity", type=int, default=None)
+    parser.add_argument("--value-validation-memory-capacity", type=int, default=None)
     parser.add_argument("--average-policy-memory-capacity", type=int, default=None)
     parser.add_argument("--policy-network-train-steps", type=int, default=None)
     parser.add_argument("--regret-network-train-steps", type=int, default=None)

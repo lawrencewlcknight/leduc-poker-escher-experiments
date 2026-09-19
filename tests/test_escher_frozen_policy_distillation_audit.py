@@ -38,6 +38,9 @@ def test_experiment_45_preserves_core_memories_and_enlarges_only_policy():
     assert DEFAULT_CONFIG["expected_final_nodes_touched"] is None
     assert DEFAULT_CONFIG["check_exploitability_every"] == 10
     assert DEFAULT_CONFIG["memory_capacity"] == 50_000
+    assert DEFAULT_CONFIG["regret_memory_capacity"] == 50_000
+    assert DEFAULT_CONFIG["value_memory_capacity"] == 50_000
+    assert DEFAULT_CONFIG["value_validation_memory_capacity"] == 50_000
     assert DEFAULT_CONFIG["average_policy_memory_capacity"] == 1_000_000
     assert DEFAULT_CONFIG["policy_network_layers"] == (256, 256, 128)
     assert tuple(DEFAULT_CONFIG["distillation_arms"]) == ARM_ORDER
@@ -89,11 +92,14 @@ def test_smoke_config_reduces_all_expensive_dimensions():
     assert config["policy_network_train_steps"] == 2
 
 
-def test_solver_uses_independent_policy_and_core_memory_capacities():
+def test_solver_uses_independent_memory_capacities():
     config = dict(DEFAULT_CONFIG)
     config.update({
         "num_iterations": 0,
         "memory_capacity": 7,
+        "regret_memory_capacity": 11,
+        "value_memory_capacity": 13,
+        "value_validation_memory_capacity": 17,
         "average_policy_memory_capacity": 19,
         "policy_network_layers": (8, 8),
         "regret_network_layers": (8, 8),
@@ -102,10 +108,18 @@ def test_solver_uses_independent_policy_and_core_memory_capacities():
     })
     solver = make_escher_solver(pyspiel.load_game("leduc_poker"), config)
     assert solver._average_policy_memories._reservoir_buffer_capacity == 19
-    assert solver._regret_memories[0]._reservoir_buffer_capacity == 7
-    assert solver._regret_memories[1]._reservoir_buffer_capacity == 7
-    assert solver._value_memory._reservoir_buffer_capacity == 7
-    assert solver._value_memory_test._reservoir_buffer_capacity == 7
+    assert solver._regret_memories[0]._reservoir_buffer_capacity == 11
+    assert solver._regret_memories[1]._reservoir_buffer_capacity == 11
+    assert solver._value_memory._reservoir_buffer_capacity == 13
+    assert solver._value_memory_test._reservoir_buffer_capacity == 17
+    solver._value_memory.add(b"train")
+    solver._value_memory_test.add(b"validation")
+    solver.clear_val_memories()
+    solver.clear_val_memories_test()
+    assert solver.get_value_memory_peak_counts() == {
+        "training": 1,
+        "validation": 1,
+    }
 
 
 def test_solver_wall_clock_budget_stops_at_a_completed_iteration():

@@ -201,14 +201,35 @@ class ParallelESCHERSolver(ESCHERSolver):
             )
 
         total_memory_capacity = int(solver_kwargs["memory_capacity"])
+        total_regret_memory_capacity = int(
+            solver_kwargs.get("regret_memory_capacity")
+            or total_memory_capacity
+        )
+        total_value_memory_capacity = int(
+            solver_kwargs.get("value_memory_capacity")
+            or total_memory_capacity
+        )
+        total_value_validation_memory_capacity = int(
+            solver_kwargs.get("value_validation_memory_capacity")
+            or total_memory_capacity
+        )
         total_average_policy_memory_capacity = int(
             solver_kwargs.get("average_policy_memory_capacity")
             or total_memory_capacity
         )
-        if total_memory_capacity < self._parallel_num_workers:
-            raise ValueError(
-                "memory_capacity must provide at least one slot per parallel worker."
-            )
+        for name, capacity in (
+            ("memory_capacity", total_memory_capacity),
+            ("regret_memory_capacity", total_regret_memory_capacity),
+            ("value_memory_capacity", total_value_memory_capacity),
+            (
+                "value_validation_memory_capacity",
+                total_value_validation_memory_capacity,
+            ),
+        ):
+            if capacity < self._parallel_num_workers:
+                raise ValueError(
+                    f"{name} must provide at least one slot per parallel worker."
+                )
         if total_average_policy_memory_capacity < self._parallel_num_workers:
             raise ValueError(
                 "average_policy_memory_capacity must provide at least one slot "
@@ -243,16 +264,46 @@ class ParallelESCHERSolver(ESCHERSolver):
                 total_memory_capacity,
                 self._parallel_num_workers,
             )
+            regret_capacities = partition_total(
+                total_regret_memory_capacity,
+                self._parallel_num_workers,
+            )
+            value_capacities = partition_total(
+                total_value_memory_capacity,
+                self._parallel_num_workers,
+            )
+            value_validation_capacities = partition_total(
+                total_value_validation_memory_capacity,
+                self._parallel_num_workers,
+            )
             average_policy_capacities = partition_total(
                 total_average_policy_memory_capacity,
                 self._parallel_num_workers,
             )
-            for worker_index, (capacity, policy_capacity) in enumerate(
-                zip(capacities, average_policy_capacities)
+            worker_capacities = zip(
+                capacities,
+                regret_capacities,
+                value_capacities,
+                value_validation_capacities,
+                average_policy_capacities,
+            )
+            for worker_index, (
+                capacity,
+                regret_capacity,
+                value_capacity,
+                value_validation_capacity,
+                policy_capacity,
+            ) in enumerate(
+                worker_capacities
             ):
                 worker_kwargs = dict(solver_kwargs)
                 worker_kwargs.update({
                     "memory_capacity": int(capacity),
+                    "regret_memory_capacity": int(regret_capacity),
+                    "value_memory_capacity": int(value_capacity),
+                    "value_validation_memory_capacity": int(
+                        value_validation_capacity
+                    ),
                     "average_policy_memory_capacity": int(policy_capacity),
                     "compute_exploitability": False,
                     "save_policy_weights": False,

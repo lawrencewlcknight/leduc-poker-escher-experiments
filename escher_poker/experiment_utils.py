@@ -54,6 +54,21 @@ def make_escher_solver(
         batch_size_value=int(config["batch_size_value"]),
         batch_size_average_policy=int(config["batch_size_average_policy"]),
         memory_capacity=int(config["memory_capacity"]),
+        regret_memory_capacity=(
+            None
+            if config.get("regret_memory_capacity") is None
+            else int(config["regret_memory_capacity"])
+        ),
+        value_memory_capacity=(
+            None
+            if config.get("value_memory_capacity") is None
+            else int(config["value_memory_capacity"])
+        ),
+        value_validation_memory_capacity=(
+            None
+            if config.get("value_validation_memory_capacity") is None
+            else int(config["value_validation_memory_capacity"])
+        ),
         average_policy_memory_capacity=(
             None
             if config.get("average_policy_memory_capacity") is None

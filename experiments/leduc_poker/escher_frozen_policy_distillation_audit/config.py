@@ -61,6 +61,9 @@ DEFAULT_CONFIG.update({
     # seed to reach as many completed iterations/nodes as 12 hours permits.
     "check_exploitability_every": 10,
     "memory_capacity": 50_000,
+    "regret_memory_capacity": 50_000,
+    "value_memory_capacity": 50_000,
+    "value_validation_memory_capacity": 50_000,
     "average_policy_memory_capacity": 1_000_000,
     "policy_network_layers": (256, 256, 128),
     "save_final_checkpoints": False,
@@ -75,11 +78,10 @@ DEFAULT_CONFIG.update({
 })
 
 
-def validate_config(config: Mapping[str, object], *, smoke: bool = False) -> None:
+def validate_common_config(config: Mapping[str, object], *, smoke: bool = False) -> None:
+    """Validate the shared frozen-reservoir audit design."""
     if not smoke and int(config["average_policy_memory_capacity"]) != 1_000_000:
         raise ValueError("Experiment 45 requires a 1,000,000-row policy reservoir")
-    if not smoke and int(config["memory_capacity"]) != 50_000:
-        raise ValueError("Regret and value memory_capacity must remain 50,000")
     if not smoke and tuple(config["policy_network_layers"]) != (256, 256, 128):
         raise ValueError("The audit fixes the policy network at 256x256x128")
     if (
@@ -98,8 +100,32 @@ def validate_config(config: Mapping[str, object], *, smoke: bool = False) -> Non
         raise ValueError("policy_network_train_steps must be positive")
     if int(config["batch_size_average_policy"]) <= 0:
         raise ValueError("batch_size_average_policy must be positive")
+    for name in (
+        "memory_capacity",
+        "regret_memory_capacity",
+        "value_memory_capacity",
+        "value_validation_memory_capacity",
+        "average_policy_memory_capacity",
+    ):
+        if int(config[name]) <= 0:
+            raise ValueError(f"{name} must be positive")
     if tuple(config["distillation_arms"]) != ARM_ORDER:
         raise ValueError("All four frozen-reservoir arms are required")
+
+
+def validate_config(config: Mapping[str, object], *, smoke: bool = False) -> None:
+    validate_common_config(config, smoke=smoke)
+    if not smoke:
+        for name in (
+            "memory_capacity",
+            "regret_memory_capacity",
+            "value_memory_capacity",
+            "value_validation_memory_capacity",
+        ):
+            if int(config[name]) != 50_000:
+                raise ValueError(
+                    f"Experiment 45 requires {name}=50,000, got {config[name]}"
+                )
 
 
 __all__ = [
@@ -116,5 +142,6 @@ __all__ = [
     "ROW_MSE",
     "SAFETY_MAX_ITERATIONS",
     "TRAINING_WALL_CLOCK_SECONDS",
+    "validate_common_config",
     "validate_config",
 ]

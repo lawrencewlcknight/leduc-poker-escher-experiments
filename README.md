@@ -107,7 +107,11 @@ The repository is organised so that each experiment can be run independently whi
 │       ├── escher_combined_candidate_ablation/      # Experiment 41
 │       ├── escher_long_horizon_candidate_ablation/  # Experiment 42
 │       ├── escher_final_candidate_checkpoint_head_to_head/ # Experiment 43
-│       └── escher_final_candidate_trajectory_15m/   # Experiment 44
+│       ├── escher_final_candidate_trajectory_15m/   # Experiment 44
+│       ├── escher_frozen_policy_distillation_audit/ # Experiment 45
+│       ├── escher_paper_hyperparameter_distillation_audit/ # Experiment 46
+│       ├── escher_large_regret_reservoir_distillation_audit/ # Experiment 47
+│       └── escher_all_large_memory_distillation_audit/ # Experiment 48
 ├── docs/
 │   └── OUTPUT_CONVENTIONS.md
 ├── notebooks/                                        # Original notebook archive
@@ -593,6 +597,23 @@ experiments. The 12-hour endpoint makes completed iterations and touched nodes
 outcomes, exposing whether the paper-scale optimisation budget improves policy
 quality enough to justify its much lower iteration throughput.
 
+### 47. One-million-row regret-reservoir audit
+
+[`experiments/leduc_poker/escher_large_regret_reservoir_distillation_audit/`](experiments/leduc_poker/escher_large_regret_reservoir_distillation_audit/README.md)
+
+Repeats Experiment 45 while increasing only each player's regret replay
+reservoir from 50,000 to 1,000,000 rows. The three 12-hour seeds and four
+frozen-policy distillation arms are unchanged.
+
+### 48. One-million-row all-memory audit
+
+[`experiments/leduc_poker/escher_all_large_memory_distillation_audit/`](experiments/leduc_poker/escher_all_large_memory_distillation_audit/README.md)
+
+Extends Experiment 47 by increasing the transient value-training and
+value-validation buffer ceilings to 1,000,000 rows. All effective regret,
+value, validation and average-policy memories therefore have one-million-row
+capacities.
+
 ## Setup
 
 Create and activate a Python 3.9 virtual environment. The repository contains
@@ -750,6 +771,12 @@ python -m experiments.leduc_poker.escher_frozen_policy_distillation_audit.run
 
 # Experiment 46 — ESCHER paper-hyperparameter distillation audit
 python -m experiments.leduc_poker.escher_paper_hyperparameter_distillation_audit.run
+
+# Experiment 47 — one-million-row regret-reservoir audit
+python -m experiments.leduc_poker.escher_large_regret_reservoir_distillation_audit.run
+
+# Experiment 48 — one-million-row all-memory audit
+python -m experiments.leduc_poker.escher_all_large_memory_distillation_audit.run
 ```
 
 ### Experiment 45 cloud run: parallel seed VMs
@@ -804,6 +831,31 @@ The controller is cloud-owned. Monitor or resume with:
 ./gcp/run_escher_paper_hyperparameter_distillation_audit.sh status
 ./gcp/run_escher_paper_hyperparameter_distillation_audit.sh resume
 ```
+
+### Experiments 47 and 48 cloud runs: large-memory audits
+
+Both studies use Experiment 45's controller-owned three-VM schedule. Run the
+mandatory local smoke test, then submit with the existing cloud environment:
+
+```bash
+# Experiment 47
+./gcp/run_escher_large_regret_reservoir_distillation_audit.sh smoke-local
+export REPO_REF="$(git rev-parse HEAD)"
+export RUN_ID="exp47-regret1m-$(date -u '+%Y%m%d-%H%M%S')"
+export PARALLELISM=3
+./gcp/run_escher_large_regret_reservoir_distillation_audit.sh run
+
+# Experiment 48 (set a new RUN_ID before submission)
+./gcp/run_escher_all_large_memory_distillation_audit.sh smoke-local
+export REPO_REF="$(git rev-parse HEAD)"
+export RUN_ID="exp48-all1m-$(date -u '+%Y%m%d-%H%M%S')"
+export PARALLELISM=3
+./gcp/run_escher_all_large_memory_distillation_audit.sh run
+```
+
+Monitor with the corresponding script's `status` action and resume with its
+`resume` action. The three seeds run concurrently on separate `n2-standard-8`
+VMs; each task retains the Experiment 45 24-hour hard ceiling.
 
 For quick GCP smoke tests, first make sure the environment variables required
 by `gcp/submit_batch_experiment.sh` are set: `PROJECT_ID`, `REGION`, `BUCKET`,
@@ -1436,6 +1488,12 @@ inspect a job without submitting it; `BATCH_MAX_RETRY_COUNT` and
 
 # Experiment 46 local smoke test — paper-hyperparameter contract and orchestration
 ./gcp/run_escher_paper_hyperparameter_distillation_audit.sh smoke-local
+
+# Experiment 47 local smoke test — one-million-row regret reservoirs
+./gcp/run_escher_large_regret_reservoir_distillation_audit.sh smoke-local
+
+# Experiment 48 local smoke test — all effective memory ceilings at one million
+./gcp/run_escher_all_large_memory_distillation_audit.sh smoke-local
 ```
 
 Outputs are written to a timestamped subdirectory under `outputs/` by default. The key files are:

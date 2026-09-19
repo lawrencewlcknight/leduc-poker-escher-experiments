@@ -131,6 +131,9 @@ class ESCHERSolver(policy.Policy):
                  regret_target_standardize_epsilon: float = 1e-6,
                  regret_target_fixed_scale: float = 1.0,
                  regret_target_ema_decay: float = 0.99,
+                 regret_memory_capacity: int = None,
+                 value_memory_capacity: int = None,
+                 value_validation_memory_capacity: int = None,
                  *args, **kwargs):
         """Initialize the ESCHER algorithm.
 
@@ -145,9 +148,17 @@ class ESCHERSolver(policy.Policy):
           learning_rate: Learning rate.
           batch_size_regret: (int) Batch size to sample from regret memories.
           batch_size_average_policy: (int) Batch size to sample from average_policy memories.
-          memory_capacity: Number of samples that can be stored in each regret
-            and value memory. It also remains the backwards-compatible default
-            for the average-policy reservoir.
+          memory_capacity: Backwards-compatible default number of samples for
+            each regret, value and average-policy memory.
+          regret_memory_capacity: Optional independent capacity for each
+            player's regret reservoir. When omitted, ``memory_capacity`` is
+            used.
+          value_memory_capacity: Optional independent capacity for the
+            transient value-training buffer. When omitted,
+            ``memory_capacity`` is used.
+          value_validation_memory_capacity: Optional independent capacity for
+            the transient value-validation buffer. When omitted,
+            ``memory_capacity`` is used.
           average_policy_memory_capacity: Optional independent capacity for the
             average-policy reservoir. When omitted, ``memory_capacity`` is used.
           regret_replay_mode: Regret replay backend. Supported values are
@@ -558,6 +569,9 @@ class ESCHERSolver(policy.Policy):
 
         self._create_memories(
             memory_capacity,
+            regret_memory_capacity=regret_memory_capacity,
+            value_memory_capacity=value_memory_capacity,
+            value_validation_memory_capacity=value_validation_memory_capacity,
             average_policy_memory_capacity=average_policy_memory_capacity,
         )
 
@@ -767,18 +781,37 @@ class ESCHERSolver(policy.Policy):
         self,
         memory_capacity,
         *,
+        regret_memory_capacity=None,
+        value_memory_capacity=None,
+        value_validation_memory_capacity=None,
         average_policy_memory_capacity=None,
     ):
         """Create memory buffers and associated feature descriptions."""
         memory_capacity = int(memory_capacity)
         if memory_capacity <= 0:
             raise ValueError("memory_capacity must be positive.")
-        if average_policy_memory_capacity is None:
-            average_policy_memory_capacity = memory_capacity
-        average_policy_memory_capacity = int(average_policy_memory_capacity)
-        if average_policy_memory_capacity <= 0:
-            raise ValueError("average_policy_memory_capacity must be positive.")
+        def _resolve_capacity(value, name):
+            resolved = memory_capacity if value is None else int(value)
+            if resolved <= 0:
+                raise ValueError(f"{name} must be positive.")
+            return resolved
+
+        regret_memory_capacity = _resolve_capacity(
+            regret_memory_capacity, "regret_memory_capacity"
+        )
+        value_memory_capacity = _resolve_capacity(
+            value_memory_capacity, "value_memory_capacity"
+        )
+        value_validation_memory_capacity = _resolve_capacity(
+            value_validation_memory_capacity, "value_validation_memory_capacity"
+        )
+        average_policy_memory_capacity = _resolve_capacity(
+            average_policy_memory_capacity, "average_policy_memory_capacity"
+        )
         self._memory_capacity = memory_capacity
+        self._regret_memory_capacity = regret_memory_capacity
+        self._value_memory_capacity = value_memory_capacity
+        self._value_validation_memory_capacity = value_validation_memory_capacity
         self._average_policy_memory_capacity = average_policy_memory_capacity
         self._average_policy_memories = ReservoirBuffer(
             average_policy_memory_capacity
@@ -786,14 +819,16 @@ class ESCHERSolver(policy.Policy):
         self._regret_memories = [
             make_regret_replay_buffer(
                 self._regret_replay_mode,
-                memory_capacity,
+                regret_memory_capacity,
                 rare_history_quota=self._regret_replay_rare_history_quota,
                 weight_floor=self._regret_replay_weight_floor,
             )
             for _ in range(self._num_players)
         ]
-        self._value_memory = ReservoirBuffer(memory_capacity)
-        self._value_memory_test = ReservoirBuffer(memory_capacity)
+        self._value_memory = ReservoirBuffer(value_memory_capacity)
+        self._value_memory_test = ReservoirBuffer(value_validation_memory_capacity)
+        self._max_value_memory_count_before_clear = 0
+        self._max_value_validation_memory_count_before_clear = 0
 
         self._average_policy_feature_description = {
             'info_state': tf.io.FixedLenFeature([self._embedding_size], tf.float32),
@@ -975,10 +1010,27 @@ class ESCHERSolver(policy.Policy):
         return self._value_memory.get_data()
 
     def clear_value_memory(self):
+        self._max_value_memory_count_before_clear = max(
+            self._max_value_memory_count_before_clear,
+            len(self._value_memory),
+        )
         self._value_memory.clear()
 
     def get_value_memory_test(self):
         return self._value_memory_test.get_data()
+
+    def get_value_memory_peak_counts(self):
+        """Return maximum observed transient-buffer occupancy before clearing."""
+        return {
+            "training": max(
+                self._max_value_memory_count_before_clear,
+                len(self._value_memory),
+            ),
+            "validation": max(
+                self._max_value_validation_memory_count_before_clear,
+                len(self._value_memory_test),
+            ),
+        }
 
     def get_average_policy_memories(self):
         return self._average_policy_memories.get_data()
@@ -1073,10 +1125,14 @@ class ESCHERSolver(policy.Policy):
         }
 
     def clear_val_memories_test(self):
+        self._max_value_validation_memory_count_before_clear = max(
+            self._max_value_validation_memory_count_before_clear,
+            len(self._value_memory_test),
+        )
         self._value_memory_test.clear()
 
     def clear_val_memories(self):
-        self._value_memory.clear()
+        self.clear_value_memory()
 
     def traverse_game_tree_n_times(self, n, p, train_regret=False, train_value=False,
                                    record_value=False,
@@ -2883,6 +2939,11 @@ class ESCHERSolver(policy.Policy):
                 "track_sampling_coverage": bool(self._track_sampling_coverage),
                 "average_policy_weighting": self._average_policy_weighting,
                 "memory_capacity": int(self._memory_capacity),
+                "regret_memory_capacity": int(self._regret_memory_capacity),
+                "value_memory_capacity": int(self._value_memory_capacity),
+                "value_validation_memory_capacity": int(
+                    self._value_validation_memory_capacity
+                ),
                 "average_policy_memory_capacity": int(
                     self._average_policy_memory_capacity
                 ),
