@@ -83,5 +83,6 @@ The output schema is identical to Experiment 45. In particular,
 `source_seed_metrics.csv` records the realised time, endpoint overshoot,
 completed iterations and touched nodes, while `fit_metrics.csv` and the two
 charts report exact exploitability and the empirical-reservoir distillation
-gap for every arm.
-
+gap for every arm. The inherited trajectory export also writes
+`source_trajectory.csv`, `source_trajectory_summary.csv`, and source-policy
+exploitability charts against both training time and nodes touched.

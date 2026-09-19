@@ -60,6 +60,12 @@ from .distillation import (  # noqa: E402
     load_frozen_reservoir,
     save_frozen_reservoir,
 )
+from .trajectory import (  # noqa: E402
+    build_final_policy_row,
+    build_trajectory_rows,
+    export_aggregate_trajectory,
+    write_trajectory_rows,
+)
 
 
 _LOGGER = logging.getLogger("escher_poker.experiment.frozen_policy_distillation")
@@ -175,7 +181,9 @@ def _fit_seed(training_seed: int, config: Mapping[str, object]) -> int:
     return int(config["fit_seed_offset"]) + int(training_seed)
 
 
-def _run_seed(seed: int, config: dict, run_dir: Path) -> tuple[dict, list[dict]]:
+def _run_seed(
+    seed: int, config: dict, run_dir: Path
+) -> tuple[dict, list[dict], list[dict]]:
     seed_dir = run_dir / f"seed_{seed}"
     seed_dir.mkdir(parents=True, exist_ok=True)
     set_seed_tf(seed)
@@ -189,7 +197,7 @@ def _run_seed(seed: int, config: dict, run_dir: Path) -> tuple[dict, list[dict]]
         config["num_iterations"],
     )
     training_started = time.perf_counter()
-    _, _, convs, nodes, values, diagnostics = solver.solve(
+    _, final_policy_loss, convs, nodes, values, diagnostics = solver.solve(
         max_wall_clock_seconds=float(config["training_wall_clock_seconds"])
     )
     training_seconds = time.perf_counter() - training_started
@@ -205,6 +213,31 @@ def _run_seed(seed: int, config: dict, run_dir: Path) -> tuple[dict, list[dict]]
         )
     source_metrics = exact_neural_policy_metrics(game, solver._policy_network)  # pylint: disable=protected-access
     source_final_iteration = int(solver._iteration)  # pylint: disable=protected-access
+    trajectory_rows = build_trajectory_rows(
+        experiment_id=EXPERIMENT_ID,
+        experiment_name=EXPERIMENT_NAME,
+        seed=seed,
+        nash_convs=convs,
+        nodes_touched=nodes,
+        average_policy_values=values,
+        diagnostics=diagnostics,
+    )
+    trajectory_rows.append(build_final_policy_row(
+        experiment_id=EXPERIMENT_ID,
+        experiment_name=EXPERIMENT_NAME,
+        seed=seed,
+        checkpoint_index=len(trajectory_rows),
+        iteration=source_final_iteration,
+        nodes_touched=float(solve_summary["nodes_touched"]),
+        wall_clock_seconds=float(
+            solve_summary["total_solve_seconds_including_final_policy_fit"]
+        ),
+        metrics=source_metrics,
+        final_policy_loss=float(np.asarray(final_policy_loss)),
+        diagnostics=diagnostics,
+    ))
+    trajectory_path = seed_dir / "source_trajectory.csv"
+    write_trajectory_rows(trajectory_path, trajectory_rows)
     final_buffer_rows = {
         "regret_player_0": int(solver.get_regret_memory_count(0)),
         "regret_player_1": int(solver.get_regret_memory_count(1)),
@@ -312,8 +345,9 @@ def _run_seed(seed: int, config: dict, run_dir: Path) -> tuple[dict, list[dict]]
         "source_neural_minus_empirical_gap": (
             source_metrics["exploitability"] - empirical_metrics["exploitability"]
         ),
-        "trajectory_points": len(convs),
-        "final_policy_loss": float(np.asarray(diagnostics["policy_loss"])[-1]),
+        "trajectory_points": len(trajectory_rows),
+        "trajectory_path": str(trajectory_path.relative_to(run_dir)),
+        "final_policy_loss": float(np.asarray(final_policy_loss)),
         **{f"reservoir_{key}": value for key, value in reservoir_manifest.items() if key != "path"},
         "reservoir_path": str(reservoir_path.relative_to(run_dir)),
     }
@@ -374,7 +408,7 @@ def _run_seed(seed: int, config: dict, run_dir: Path) -> tuple[dict, list[dict]]
     })
     del frozen, grouped, base_weights
     cleanup_tensorflow_memory()
-    return source_row, fit_rows
+    return source_row, fit_rows, trajectory_rows
 
 
 def _summarise(source_rows: Sequence[Mapping], fit_rows: Sequence[Mapping]):
@@ -447,11 +481,17 @@ def _plot_metric(
     plt.close(fig)
 
 
-def _aggregate(run_dir: Path, source_rows: Sequence[Mapping], fit_rows: Sequence[Mapping]):
+def _aggregate(
+    run_dir: Path,
+    source_rows: Sequence[Mapping],
+    fit_rows: Sequence[Mapping],
+    trajectory_rows: Sequence[Mapping],
+):
     summary_rows = _summarise(source_rows, fit_rows)
     _write_csv(run_dir / "source_seed_metrics.csv", source_rows)
     _write_csv(run_dir / "fit_metrics.csv", fit_rows)
     _write_csv(run_dir / "arm_summary.csv", summary_rows)
+    export_aggregate_trajectory(run_dir, trajectory_rows)
     _plot_metric(
         fit_rows,
         source_rows,
@@ -474,6 +514,7 @@ def _aggregate(run_dir: Path, source_rows: Sequence[Mapping], fit_rows: Sequence
         "experiment_name": EXPERIMENT_NAME,
         "num_completed_seeds": len(source_rows),
         "num_fit_rows": len(fit_rows),
+        "num_trajectory_rows": len(trajectory_rows),
         "arm_summary": summary_rows,
     }
     _write_json(run_dir / "aggregate_summary.json", result)
@@ -526,14 +567,17 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
     _LOGGER.info("Run directory: %s", run_dir.resolve())
     _LOGGER.info("Seeds: %s", seeds)
 
-    source_rows, fit_rows, failures = [], [], []
+    source_rows, fit_rows, trajectory_rows, failures = [], [], [], []
     for index, seed in enumerate(seeds, start=1):
         _LOGGER.info("Starting seed %s (%s/%s)", seed, index, len(seeds))
         try:
-            source_row, seed_fit_rows = _run_seed(seed, config, run_dir)
+            source_row, seed_fit_rows, seed_trajectory_rows = _run_seed(
+                seed, config, run_dir
+            )
             source_rows.append(source_row)
             fit_rows.extend(seed_fit_rows)
-            _aggregate(run_dir, source_rows, fit_rows)
+            trajectory_rows.extend(seed_trajectory_rows)
+            _aggregate(run_dir, source_rows, fit_rows, trajectory_rows)
         except Exception as exc:  # pragma: no cover - operational failure path
             _LOGGER.exception("Seed %s failed: %s", seed, exc)
             failures.append({
@@ -549,7 +593,7 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
 
     if not source_rows:
         return 1
-    result = _aggregate(run_dir, source_rows, fit_rows)
+    result = _aggregate(run_dir, source_rows, fit_rows, trajectory_rows)
     if failures:
         result["status"] = "partial"
         result["failures"] = failures

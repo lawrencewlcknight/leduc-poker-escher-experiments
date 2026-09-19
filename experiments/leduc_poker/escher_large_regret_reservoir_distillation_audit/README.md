@@ -43,3 +43,6 @@ of the submitting laptop after submission. Monitor or resume with:
 Each training task has a 24-hour hard ceiling. The intended source-training
 budget is 12 hours; the remaining allowance covers the completed boundary
 iteration and frozen-reservoir distillation.
+
+The analysis directory includes the inherited raw and summarised source-policy
+trajectories and exploitability charts by both training time and nodes touched.

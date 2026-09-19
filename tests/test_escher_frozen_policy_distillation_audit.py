@@ -28,6 +28,15 @@ from experiments.leduc_poker.escher_frozen_policy_distillation_audit.distillatio
 from experiments.leduc_poker.escher_frozen_policy_distillation_audit.run import (
     build_config,
 )
+from experiments.leduc_poker.escher_frozen_policy_distillation_audit.compare_trajectories import (
+    compare_trajectories,
+)
+from experiments.leduc_poker.escher_frozen_policy_distillation_audit.trajectory import (
+    build_final_policy_row,
+    build_trajectory_rows,
+    summarise_trajectory_rows,
+    write_trajectory_rows,
+)
 
 
 def test_experiment_45_preserves_core_memories_and_enlarges_only_policy():
@@ -63,6 +72,103 @@ def test_grouped_cross_entropy_is_exact_row_objective():
         reservoir, grouped, predictions, iteration=4
     )
     assert np.isclose(row, compressed, atol=1e-7)
+
+
+def _trajectory_rows(experiment_id, seed, length=3):
+    diagnostics = {
+        "iteration": np.arange(1, length + 1) * 10,
+        "solver_iteration": np.arange(1, length + 1) * 10,
+        "wall_clock_seconds": np.arange(1, length + 1) * 900.0,
+    }
+    for name in (
+        "policy_loss",
+        "value_loss",
+        "value_test_loss",
+        "regret_loss_player_0",
+        "regret_loss_player_1",
+        "peak_rss_mb",
+        "cumulative_experience_collection_seconds",
+    ):
+        diagnostics[name] = np.arange(length, dtype=float)
+    for name in (
+        "average_policy_buffer_size",
+        "regret_buffer_size_player_0",
+        "regret_buffer_size_player_1",
+        "value_buffer_size",
+        "value_test_buffer_size",
+    ):
+        diagnostics[name] = np.arange(length, dtype=int)
+    return build_trajectory_rows(
+        experiment_id=experiment_id,
+        experiment_name=f"experiment_{experiment_id}",
+        seed=seed,
+        nash_convs=np.linspace(0.4, 0.2, length),
+        nodes_touched=np.arange(1, length + 1) * 1_000,
+        average_policy_values=np.linspace(-0.1, -0.08, length),
+        diagnostics=diagnostics,
+    )
+
+
+def test_trajectory_schema_records_time_nodes_and_exploitability():
+    rows = _trajectory_rows(45, 1234)
+    assert len(rows) == 3
+    assert rows[0]["training_hours"] == 0.25
+    assert rows[0]["nodes_touched"] == 1_000
+    assert rows[0]["exploitability"] == 0.2
+    assert rows[-1]["checkpoint_index"] == 2
+
+
+def test_trajectory_summary_accepts_variable_seed_lengths():
+    rows = _trajectory_rows(45, 1234, length=3)
+    rows.extend(_trajectory_rows(45, 2025, length=2))
+    summary = summarise_trajectory_rows(rows)
+    assert len(summary) == 3
+    assert summary[0]["n_seeds"] == 2
+    assert summary[-1]["n_seeds"] == 1
+
+
+def test_final_policy_rows_are_aggregated_separately_from_variable_checkpoints():
+    rows = _trajectory_rows(45, 1234, length=3)
+    rows.extend(_trajectory_rows(45, 2025, length=2))
+    for seed, checkpoint_index in ((1234, 3), (2025, 2)):
+        rows.append(build_final_policy_row(
+            experiment_id=45,
+            experiment_name="experiment_45",
+            seed=seed,
+            checkpoint_index=checkpoint_index,
+            iteration=30,
+            nodes_touched=4_000,
+            wall_clock_seconds=3_600,
+            metrics={"nash_conv": 0.1, "exploitability": 0.05, "policy_value": -0.08},
+            final_policy_loss=0.01,
+            diagnostics={},
+        ))
+    summary = summarise_trajectory_rows(rows)
+    final_rows = [row for row in summary if row["is_final_policy_fit"]]
+    assert len(final_rows) == 1
+    assert final_rows[0]["checkpoint_index"] == -1
+    assert final_rows[0]["n_seeds"] == 2
+    assert final_rows[0]["mean_exploitability"] == 0.05
+
+
+def test_cross_experiment_comparison_writes_temporal_charts(tmp_path):
+    inputs = []
+    for experiment_id in (45, 46):
+        analysis = tmp_path / f"exp{experiment_id}" / "analysis"
+        trajectory = analysis / "source_trajectory.csv"
+        rows = _trajectory_rows(experiment_id, 1234)
+        rows.extend(_trajectory_rows(experiment_id, 2025))
+        write_trajectory_rows(trajectory, rows)
+        inputs.append((f"Experiment {experiment_id}", trajectory))
+    output = tmp_path / "comparison"
+    result = compare_trajectories(
+        inputs, output, time_step_hours=0.25, node_grid_points=5
+    )
+    assert result["num_raw_rows"] == 12
+    assert (output / "combined_source_trajectory.csv").is_file()
+    assert (output / "combined_trajectory_summary.csv").is_file()
+    assert (output / "combined_exploitability_by_training_time.png").is_file()
+    assert (output / "combined_exploitability_by_nodes.png").is_file()
 
 
 def test_smoke_config_reduces_all_expensive_dimensions():

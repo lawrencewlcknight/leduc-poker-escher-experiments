@@ -43,6 +43,21 @@ def _read_csv(path: Path) -> list[dict]:
         return list(csv.DictReader(handle))
 
 
+def _trajectory_is_complete(rows: Sequence[Mapping], source: Mapping, seed: int) -> bool:
+    return (
+        len(rows) == int(source.get("trajectory_points", -1))
+        and {int(row.get("experiment_id", -1)) for row in rows}
+        == {EXPERIMENT_ID}
+        and {int(row.get("seed", -1)) for row in rows} == {int(seed)}
+        and sum(
+            str(row.get("is_final_policy_fit", "False")).lower() == "true"
+            for row in rows
+        ) == 1
+        and len({int(row.get("checkpoint_index", -1)) for row in rows})
+        == len(rows)
+    )
+
+
 def task_name(task_index: int, seeds: Sequence[int]) -> str:
     if task_index < 0 or task_index >= len(seeds):
         raise ValueError(
@@ -61,6 +76,9 @@ def _worker_result_is_valid(
         run_dir = result_path.parent / result["run_dir"]
         source = _read_json(run_dir / "seed_{}".format(seed) / "source_summary.json")
         fit_rows = _read_csv(run_dir / "seed_{}".format(seed) / "fit_metrics.csv")
+        trajectory_rows = _read_csv(
+            run_dir / "seed_{}".format(seed) / "source_trajectory.csv"
+        )
         reservoir = run_dir / str(source["reservoir_path"])
     except (OSError, ValueError, KeyError, json.JSONDecodeError):
         return False
@@ -75,6 +93,7 @@ def _worker_result_is_valid(
         and sha256(reservoir) == source.get("reservoir_sha256")
         and {row.get("arm_id") for row in fit_rows} == set(ARM_ORDER)
         and len(fit_rows) == len(ARM_ORDER)
+        and _trajectory_is_complete(trajectory_rows, source, seed)
     )
 
 
@@ -118,17 +137,20 @@ def run_worker(
     seed_dir = run_dir / f"seed_{seed}"
     source_summary = seed_dir / "source_summary.json"
     fit_metrics = seed_dir / "fit_metrics.csv"
+    source_trajectory = seed_dir / "source_trajectory.csv"
     if not (seed_dir / "SUCCESS.json").is_file():
         raise RuntimeError(
             f"Experiment {EXPERIMENT_ID} worker {name} has no success marker"
         )
     fit_rows = _read_csv(fit_metrics)
+    trajectory_rows = _read_csv(source_trajectory)
     source = _read_json(source_summary)
     reservoir = run_dir / str(source["reservoir_path"])
     if (
         len(fit_rows) != len(ARM_ORDER)
         or {row.get("arm_id") for row in fit_rows} != set(ARM_ORDER)
         or not source_summary.is_file()
+        or not _trajectory_is_complete(trajectory_rows, source, seed)
         or not reservoir.is_file()
         or sha256(reservoir) != source.get("reservoir_sha256")
     ):
@@ -149,6 +171,7 @@ def run_worker(
         "artifacts": {
             "source_summary": str(source_summary.relative_to(task_dir)),
             "fit_metrics": str(fit_metrics.relative_to(task_dir)),
+            "source_trajectory": str(source_trajectory.relative_to(task_dir)),
             "frozen_reservoir": str(
                 reservoir.relative_to(task_dir)
             ),
@@ -187,7 +210,7 @@ def aggregate_workers(
     if len(commits) != 1:
         raise ValueError(f"Workers used different commits: {sorted(commits)}")
 
-    source_rows, fit_rows = [], []
+    source_rows, fit_rows, trajectory_rows = [], [], []
     for seed in seeds:
         result_path, result = found[int(seed)]
         task_dir = result_path.parent
@@ -197,6 +220,7 @@ def aggregate_workers(
             raise ValueError(f"Missing success marker for seed {seed}")
         source_row = _read_json(seed_dir / "source_summary.json")
         rows = _read_csv(seed_dir / "fit_metrics.csv")
+        seed_trajectory_rows = _read_csv(seed_dir / "source_trajectory.csv")
         reservoir = run_dir / str(source_row["reservoir_path"])
         if int(source_row.get("seed", -1)) != int(seed):
             raise ValueError(f"Source summary has the wrong seed for {seed}")
@@ -204,16 +228,20 @@ def aggregate_workers(
             len(rows) != len(ARM_ORDER)
             or {row.get("arm_id") for row in rows} != set(ARM_ORDER)
             or {int(row.get("seed", -1)) for row in rows} != {int(seed)}
+            or not _trajectory_is_complete(
+                seed_trajectory_rows, source_row, int(seed)
+            )
             or not reservoir.is_file()
             or sha256(reservoir) != source_row.get("reservoir_sha256")
         ):
             raise ValueError(f"Fit metrics are incomplete for seed {seed}")
         source_rows.append(source_row)
         fit_rows.extend(rows)
+        trajectory_rows.extend(seed_trajectory_rows)
 
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-    result = _aggregate(output_dir, source_rows, fit_rows)
+    result = _aggregate(output_dir, source_rows, fit_rows, trajectory_rows)
     result.update({
         "smoke": bool(smoke),
         "production_seeds": [int(seed) for seed in seeds],

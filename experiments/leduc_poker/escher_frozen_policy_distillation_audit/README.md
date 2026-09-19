@@ -106,9 +106,18 @@ later-stage failure does not require successful earlier seeds to be rerun.
 | Output | Contents |
 | --- | --- |
 | `seed_<seed>/frozen_average_policy_reservoir.npz` | Lossless frozen final reservoir used by every arm. |
+| `seed_<seed>/source_trajectory.csv` | Every in-training source-policy evaluation plus the final playable-policy fit, including time, nodes, exploitability, policy value, losses and replay sizes. |
 | `source_seed_metrics.csv` | Source training budget, realised time/overshoot, iterations, nodes, reservoir, empirical-policy and archived neural-policy diagnostics. |
+| `source_trajectory.csv` | Canonical combined raw trajectory for all seeds. |
+| `source_trajectory_summary.csv` | Checkpoint-aligned cross-seed means, standard deviations, standard errors and contributing seed counts. |
+| `source_exploitability_by_training_time.png` | Raw seed paths and cross-seed source-policy exploitability by training time. |
+| `source_exploitability_by_nodes.png` | The same source-policy comparison by nodes touched. |
 | `fit_metrics.csv` | Exact exploitability, empirical gap, fitting work and runtime for every arm and seed. |
 | `arm_summary.csv` | Cross-seed means, standard deviations and standard errors. |
 | `exploitability_by_distillation_arm.png` | Exact arm comparison with the empirical-reservoir reference. |
 | `distillation_gap_by_arm.png` | Neural minus empirical-reservoir exploitability. |
 | `aggregate_summary.json` | Machine-readable experiment summary. |
+
+The source-policy trajectory is distinct from the four offline distillation
+arms. Those arms are fitted once after source training and therefore have only
+endpoint results.

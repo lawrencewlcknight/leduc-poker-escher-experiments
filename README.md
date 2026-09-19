@@ -857,6 +857,30 @@ Monitor with the corresponding script's `status` action and resume with its
 `resume` action. The three seeds run concurrently on separate `n2-standard-8`
 VMs; each task retains the Experiment 45 24-hour hard ceiling.
 
+### Combined temporal comparison for Experiments 45--49
+
+Experiments 45--48 persist the same canonical `analysis/source_trajectory.csv`
+schema. Any future Experiment 49 derived from this runner will inherit it. Once
+the analysis folders are downloaded, generate combined time- and node-based
+charts with:
+
+```bash
+python -m experiments.leduc_poker.escher_frozen_policy_distillation_audit.compare_trajectories \
+  --experiment "Experiment 45=cloud_outputs/RUN_45/analysis" \
+  --experiment "Experiment 46=cloud_outputs/RUN_46/analysis" \
+  --experiment "Experiment 47=cloud_outputs/RUN_47/analysis" \
+  --experiment "Experiment 48=cloud_outputs/RUN_48/analysis" \
+  --experiment "Experiment 49=cloud_outputs/RUN_49/analysis" \
+  --output-dir cloud_outputs/experiments_45_to_49_trajectory_comparison
+```
+
+Omit Experiment 49 until it exists. The utility uses last-observation-carried-
+forward interpolation only between a seed's first and final recorded
+evaluations, plots individual seed traces faintly, and plots the mean with a
+one-standard-error band only where every configured seed contributes. The
+temporal curves represent the in-training neural source policy; offline
+frozen-reservoir distillation arms remain endpoint-only comparisons.
+
 For quick GCP smoke tests, first make sure the environment variables required
 by `gcp/submit_batch_experiment.sh` are set: `PROJECT_ID`, `REGION`, `BUCKET`,
 and `SA_EMAIL`. Then paste any of the following commands from the repository
