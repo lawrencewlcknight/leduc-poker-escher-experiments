@@ -117,4 +117,5 @@ def test_experiment_46_batch_builder_uses_three_parallel_vms(tmp_path):
     assert job["allocationPolicy"]["instances"][0]["policy"]["machineType"] == "n2-standard-8"
     script = task_group["taskSpec"]["runnables"][0]["script"]["text"]
     assert "escher_paper_hyperparameter_distillation_audit.cloud" in script
-
+    assert "ESCHER_AUDIT_TASK_METADATA" in script
+    assert "json.load(sys.stdin)" not in script

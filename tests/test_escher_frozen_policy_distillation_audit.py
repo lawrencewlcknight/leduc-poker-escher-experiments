@@ -307,6 +307,8 @@ def test_batch_builder_runs_all_seed_tasks_on_separate_parallel_vms(tmp_path):
     script = task_group["taskSpec"]["runnables"][0]["script"]["text"]
     assert 'git -C "$REPOSITORY" checkout --detach "$REPO_REF"' in script
     assert "escher_frozen_policy_distillation_audit.cloud" in script
+    assert "ESCHER_AUDIT_TASK_METADATA" in script
+    assert "json.load(sys.stdin)" not in script
 
 
 def test_controller_fails_fast_when_child_job_listing_is_forbidden(tmp_path):

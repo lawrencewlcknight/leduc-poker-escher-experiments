@@ -113,12 +113,20 @@ gcloud storage rsync --recursive "$OUTPUT_ROOT" "$BUCKET_ROOT/$RUN_ID/smoke"
     elif args.kind == "train":
         action = f"""
 TASK_INDEX="${{BATCH_TASK_INDEX:?Google Batch did not set BATCH_TASK_INDEX}}"
-TASK_METADATA="$(python -m {MODULE} schedule | python -c '
-import json, sys
-schedule = json.load(sys.stdin)
-task = schedule["tasks"][int(sys.argv[1])]
-print(task["seed"], task["task_name"])
-' "$TASK_INDEX")"
+TASK_METADATA="$(python - "$TASK_INDEX" <<'PY' | sed -n 's/^ESCHER_AUDIT_TASK_METADATA //p' | tail -n 1
+import importlib
+import sys
+
+module = importlib.import_module("{MODULE}")
+index = int(sys.argv[1])
+seeds = tuple(module.DEFAULT_SEEDS)
+print(
+    "ESCHER_AUDIT_TASK_METADATA",
+    int(seeds[index]),
+    module.task_name(index, seeds),
+)
+PY
+)"
 read -r SOURCE_SEED TASK_NAME EXTRA_METADATA <<< "$TASK_METADATA"
 EXPECTED_TASK_NAME="task_$(printf '%03d' "$TASK_INDEX")_seed_$SOURCE_SEED"
 if [[ ! "$SOURCE_SEED" =~ ^[0-9]+$ || "$TASK_NAME" != "$EXPECTED_TASK_NAME" || -n "$EXTRA_METADATA" ]]; then

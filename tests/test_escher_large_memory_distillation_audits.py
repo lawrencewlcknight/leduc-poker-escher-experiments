@@ -137,3 +137,5 @@ def test_large_memory_batch_builders_use_three_parallel_vms(tmp_path):
         )
         script = task_group["taskSpec"]["runnables"][0]["script"]["text"]
         assert module_name in script
+        assert "ESCHER_AUDIT_TASK_METADATA" in script
+        assert "json.load(sys.stdin)" not in script
