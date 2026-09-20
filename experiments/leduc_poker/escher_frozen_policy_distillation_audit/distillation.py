@@ -210,6 +210,21 @@ def initial_policy_weights(
     return [np.asarray(weight).copy() for weight in model.get_weights()]
 
 
+def policy_network_from_weights(
+    config: Mapping[str, object],
+    reservoir: FrozenReservoir,
+    weights: Sequence[np.ndarray],
+):
+    """Build a policy network with explicit, already-materialised weights."""
+    model = _network(
+        config,
+        reservoir.info_states.shape[1],
+        reservoir.action_probs.shape[1],
+    )
+    model.set_weights(weights)
+    return model
+
+
 def _per_row_loss(targets, predictions, loss_name: str):
     if loss_name == "mse":
         return tf.reduce_mean(tf.square(targets - predictions), axis=-1)
@@ -401,6 +416,7 @@ __all__ = [
     "group_reservoir",
     "initial_policy_weights",
     "load_frozen_reservoir",
+    "policy_network_from_weights",
     "save_frozen_reservoir",
     "sha256",
 ]

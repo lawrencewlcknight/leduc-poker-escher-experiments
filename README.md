@@ -111,7 +111,8 @@ The repository is organised so that each experiment can be run independently whi
 │       ├── escher_frozen_policy_distillation_audit/ # Experiment 45
 │       ├── escher_paper_hyperparameter_distillation_audit/ # Experiment 46
 │       ├── escher_large_regret_reservoir_distillation_audit/ # Experiment 47
-│       └── escher_all_large_memory_distillation_audit/ # Experiment 48
+│       ├── escher_all_large_memory_distillation_audit/ # Experiment 48
+│       └── escher_paper_36h_trajectory/           # Experiment 49
 ├── docs/
 │   └── OUTPUT_CONVENTIONS.md
 ├── notebooks/                                        # Original notebook archive
@@ -616,6 +617,17 @@ value-validation buffer ceilings to 1,000,000 rows. All effective regret,
 value, validation and average-policy memories therefore have one-million-row
 capacities.
 
+### 49. Five-seed 36-hour paper-aligned ESCHER trajectory
+
+[`experiments/leduc_poker/escher_paper_36h_trajectory/`](experiments/leduc_poker/escher_paper_36h_trajectory/README.md)
+
+Extends the best Experiment 46 learner to five seeds and 36 active training
+hours. It freezes the one-million-row policy reservoir every 30 active minutes,
+at the first completed iteration crossing 15 million nodes, and at the final
+36-hour boundary. A separate five-VM evaluation stage applies the selected
+grouped soft-target cross-entropy fit and computes exact neural and empirical
+exploitability, producing thesis-ready trajectories by both time and nodes.
+
 ## Setup
 
 Create and activate a Python 3.9 virtual environment. The repository contains
@@ -779,6 +791,9 @@ python -m experiments.leduc_poker.escher_large_regret_reservoir_distillation_aud
 
 # Experiment 48 — one-million-row all-memory audit
 python -m experiments.leduc_poker.escher_all_large_memory_distillation_audit.run
+
+# Experiment 49 — use the smoke/controller launcher described below
+./gcp/run_escher_paper_36h_trajectory.sh smoke-local
 ```
 
 ### Experiment 45 cloud run: parallel seed VMs
@@ -877,6 +892,39 @@ Exact exploitability is reported for the once-fitted endpoint source policy,
 the empirical reservoir policy and the four frozen-reservoir fitting arms.
 Use Experiment 44 when a dense standard-ESCHER exploitability trajectory is
 required.
+
+### Experiment 49 cloud run: five-seed 36-hour trajectory
+
+Experiment 49 uses a cloud-owned four-stage schedule: smoke, training,
+deferred evaluation, and aggregation. The five training seeds run concurrently
+on five separate `n2-standard-8` VMs. After training finishes, the five
+evaluation tasks also run concurrently on separate VMs. Frozen-checkpoint I/O
+is excluded from the 36-hour learner budget, and no policy fitting occurs in
+the timed learner.
+
+```bash
+./gcp/run_escher_paper_36h_trajectory.sh smoke-local
+
+export REPO_REF="$(git rev-parse HEAD)"
+export RUN_ID="exp49-paper36h-$(date -u '+%Y%m%d-%H%M%S')"
+export PARALLELISM=5
+
+./gcp/run_escher_paper_36h_trajectory.sh run
+```
+
+The laptop may be disconnected after submission. Monitor or resume with:
+
+```bash
+./gcp/run_escher_paper_36h_trajectory.sh status
+./gcp/run_escher_paper_36h_trajectory.sh resume
+```
+
+Training tasks have a 48-hour hard ceiling and evaluation tasks a 20-hour
+ceiling. Automatic task retries are disabled for these expensive arrays; the
+`resume` action preserves completed seeds and resumes completed checkpoint
+evaluations. Thesis-ready outputs are written to
+`$BUCKET/$RUN_ID/analysis/`. The much larger frozen reservoirs remain under
+`$BUCKET/$RUN_ID/training/` and need not be downloaded for ordinary analysis.
 
 For quick GCP smoke tests, first make sure the environment variables required
 by `gcp/submit_batch_experiment.sh` are set: `PROJECT_ID`, `REGION`, `BUCKET`,
@@ -1515,6 +1563,9 @@ inspect a job without submitting it; `BATCH_MAX_RETRY_COUNT` and
 
 # Experiment 48 local smoke test — all effective memory ceilings at one million
 ./gcp/run_escher_all_large_memory_distillation_audit.sh smoke-local
+
+# Experiment 49 local smoke test — training, deferred fitting and trajectory aggregation
+./gcp/run_escher_paper_36h_trajectory.sh smoke-local
 ```
 
 Outputs are written to a timestamped subdirectory under `outputs/` by default. The key files are:

@@ -1231,6 +1231,8 @@ class ESCHERSolver(policy.Policy):
         post_evaluation_callback=None,
         post_iteration_callback=None,
         max_wall_clock_seconds=None,
+        exclude_post_iteration_callback_time=False,
+        fit_final_policy=True,
     ):
         """Run ESCHER training and collect thesis-style diagnostics.
 
@@ -1255,6 +1257,13 @@ class ESCHERSolver(policy.Policy):
             does not start another iteration once this many seconds have
             elapsed. Any iteration already in progress is completed, so the
             realised duration may exceed the target by at most one iteration.
+          exclude_post_iteration_callback_time: If true, time spent in the
+            post-iteration callback is excluded from the active-training
+            budget and the reported active wall clock. This is intended for
+            checkpoint persistence, not learner work.
+          fit_final_policy: Whether to fit the average-policy network after
+            the timed/iteration-limited learner loop. Disable this when a
+            frozen reservoir will be fitted by an independent evaluator.
 
         Returns:
           regret_losses: dict[player -> list[float]]
@@ -1297,6 +1306,7 @@ class ESCHERSolver(policy.Policy):
         last_value_test_loss = np.nan
         solve_start_time = time.time()
         solve_start_monotonic = time.perf_counter()
+        excluded_post_iteration_callback_seconds = 0.0
         completed_solve_passes = 0
         termination_reason = "iteration_limit"
         timestr = "{:%Y_%m_%d_%H_%M_%S}".format(datetime.now())
@@ -1318,7 +1328,11 @@ class ESCHERSolver(policy.Policy):
                 self.traverse_game_tree_n_times(1, 0, track_mean_squares=False)
 
                 for i in range(self._num_iterations + 1):
-                    active_elapsed = time.perf_counter() - solve_start_monotonic
+                    active_elapsed = (
+                        time.perf_counter()
+                        - solve_start_monotonic
+                        - excluded_post_iteration_callback_seconds
+                    )
                     if (
                         i > 0
                         and max_wall_clock_seconds is not None
@@ -1582,12 +1596,15 @@ class ESCHERSolver(policy.Policy):
                             post_evaluation_callback(self, int(i))
 
                     if post_iteration_callback is not None:
+                        callback_started = time.perf_counter()
                         post_iteration_callback(self, {
                             "iteration": int(i + 1),
                             "solver_iteration": int(self._iteration),
                             "nodes_touched": int(num_nodes),
                             "wall_clock_seconds": float(
-                                time.perf_counter() - solve_start_monotonic
+                                time.perf_counter()
+                                - solve_start_monotonic
+                                - excluded_post_iteration_callback_seconds
                             ),
                             "learning_rate": float(current_lr),
                             "value_loss": float(last_value_loss),
@@ -1605,17 +1622,30 @@ class ESCHERSolver(policy.Policy):
                                 self._cumulative_value_traversal_seconds
                             ),
                         })
+                        if exclude_post_iteration_callback_time:
+                            excluded_post_iteration_callback_seconds += (
+                                time.perf_counter() - callback_started
+                            )
 
-        active_training_seconds = time.perf_counter() - solve_start_monotonic
+        active_training_seconds = (
+            time.perf_counter()
+            - solve_start_monotonic
+            - excluded_post_iteration_callback_seconds
+        )
 
-        # Train the final policy network so the returned solver is immediately playable.
-        self._reinitialize_policy_network()
-        policy_loss = self._learn_average_policy_network()
+        # Usually return a playable solver; deferred evaluators can skip this fit.
+        if fit_final_policy:
+            self._reinitialize_policy_network()
+            policy_loss = self._learn_average_policy_network()
         self._last_solve_summary = {
             "termination_reason": termination_reason,
             "hit_wall_clock_limit": termination_reason == "wall_clock_limit",
             "wall_clock_budget_seconds": max_wall_clock_seconds,
             "active_training_seconds": float(active_training_seconds),
+            "excluded_post_iteration_callback_seconds": float(
+                excluded_post_iteration_callback_seconds
+            ),
+            "fit_final_policy": bool(fit_final_policy),
             "budget_overshoot_seconds": (
                 None
                 if max_wall_clock_seconds is None
